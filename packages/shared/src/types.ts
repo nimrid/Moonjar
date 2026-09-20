@@ -66,6 +66,7 @@ export interface BuyDecisionLog {
   machineReason: string;
   humanReasonKid: string;
   humanReasonGuardian: string;
+  txSignature?: string;
 }
 
 export interface KidRequest {

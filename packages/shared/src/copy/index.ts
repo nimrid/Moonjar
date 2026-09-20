@@ -8,6 +8,7 @@ export interface CompanyKidCopy {
     funFact: string;
   };
   big: {
+    symbol?: string;
     whatTheyDo: string;
     whyCool: string;
     funFact: string;

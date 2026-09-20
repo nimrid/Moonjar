@@ -1,0 +1,93 @@
+@font-face {
+  font-family: 'Fredoka';
+  src: url('/fonts/fredoka-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Fredoka';
+  src: url('/fonts/fredoka-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Nunito';
+  src: url('/fonts/nunito-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Nunito';
+  src: url('/fonts/nunito-latin-600-normal.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Nunito';
+  src: url('/fonts/nunito-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  src: url('/fonts/atkinson-hyperlegible-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible';
+  src: url('/fonts/atkinson-hyperlegible-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-fredoka: 'Fredoka', cursive, sans-serif;
+  --font-nunito: 'Nunito', sans-serif;
+  --font-atkinson: 'Atkinson Hyperlegible', monospace, sans-serif;
+
+  --color-cream: #FFFDF8;
+  --color-paper: #FFFFFF;
+  --color-ink: #1F1B2E;
+  --color-sun: #FFD15C;
+  --color-sun-light: #FFF3D6;
+  --color-grape: #8B5CF6;
+  --color-grape-light: #EDE9FE;
+  --color-leaf: #10B981;
+  --color-leaf-light: #D1FAE5;
+  --color-sky: #38BDF8;
+  --color-sky-light: #E0F2FE;
+  --color-rose: #F43F5E;
+  --color-rose-light: #FFE4E6;
+  --color-slate-cool: #64748B;
+  --color-slate-light: #F1F5F9;
+
+  --shadow-sm: 2px 2px 0px #1F1B2E;
+  --shadow-md: 4px 4px 0px #1F1B2E;
+  --shadow-lg: 6px 6px 0px #1F1B2E;
+  --shadow-xl: 8px 8px 0px #1F1B2E;
+}
+
+[data-theme='night'] {
+  --color-cream: #12111A;
+  --color-paper: #1E1B2E;
+  --color-ink: #F8FAFC;
+  --color-slate-light: #2A273F;
+  --shadow-sm: 2px 2px 0px #F8FAFC;
+  --shadow-md: 4px 4px 0px #F8FAFC;
+  --shadow-lg: 6px 6px 0px #F8FAFC;
+  --shadow-xl: 8px 8px 0px #F8FAFC;
+}

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { calculatePremiumPct, getPriceCheck, BASKET_PRESETS } from './prestocks.js';
-import { COMPANY_BLURBS, LESSONS } from './copy/index.js';
-import { computeFleschKincaidGrade } from './flesch-kincaid.js';
-import { findBannedWords } from './banned-words.js';
+import { calculatePremiumPct, getPriceCheck, BASKET_PRESETS } from './prestocks';
+import { COMPANY_BLURBS, LESSONS } from './copy/index';
+import { computeFleschKincaidGrade } from './flesch-kincaid';
+import { findBannedWords } from './banned-words';
 
 describe('Shared Package Unit Tests', () => {
   describe('PreStocks Pricing & Categorization', () => {

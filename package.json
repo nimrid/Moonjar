@@ -4,7 +4,10 @@
   "private": true,
   "scripts": {
     "build": "pnpm --recursive run build",
-    "dev": "pnpm --parallel --filter web --filter keeper run dev",
+    "dev": "pnpm --parallel --filter @moonjar/web --filter @moonjar/keeper run dev",
+    "dev:web": "pnpm --filter @moonjar/web dev",
+    "dev:keeper": "pnpm --filter @moonjar/keeper dev",
+    "start": "pnpm --parallel --filter @moonjar/web --filter @moonjar/keeper run start",
     "test": "pnpm --recursive run test",
     "test:spike": "tsx scripts/spike.ts",
     "lint": "pnpm --recursive run lint"
