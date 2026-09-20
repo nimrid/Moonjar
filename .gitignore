@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+dist/
+build/
+target/
+.anchor/
+test-ledger/
+.system_generated/
+*.log
+.DS_Store
+.env
+.env.local
+.env*.local

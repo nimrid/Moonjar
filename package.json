@@ -1,0 +1,17 @@
+{
+  "name": "moonjar-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --recursive run build",
+    "dev": "pnpm --parallel --filter web --filter keeper run dev",
+    "test": "pnpm --recursive run test",
+    "test:spike": "tsx scripts/spike.ts",
+    "lint": "pnpm --recursive run lint"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
