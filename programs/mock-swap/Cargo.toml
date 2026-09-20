@@ -1,0 +1,21 @@
+[package]
+name = "mock-swap"
+version = "0.1.0"
+description = "Moonjar Mock Swap Program"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "mock_swap"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "1.2.0", features = ["init-if-needed"] }
+anchor-spl = { version = "1.2.0", features = ["token"] }
