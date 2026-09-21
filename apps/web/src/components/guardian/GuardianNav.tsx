@@ -22,12 +22,10 @@ export const GuardianNav: React.FC = () => {
   const { connected, publicKey } = useWallet();
 
   const links = [
-    { href: '/guardian/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/guardian/baskets', label: 'Baskets & Caps', icon: PieChart },
-    { href: '/guardian/decisions', label: 'Decisions Log', icon: ScrollText },
-    { href: '/guardian/gifts', label: 'Gift Links', icon: Gift },
-    { href: '/guardian/roundups', label: 'Round-ups', icon: Coins },
-    { href: '/guardian/kid-link', label: 'Kid Link', icon: QrCode },
+    { href: '/guardian/dashboard', label: 'Vault Cockpit', icon: LayoutDashboard },
+    { href: '/guardian/baskets', label: 'PreStocks Baskets', icon: PieChart },
+    { href: '/guardian/decisions', label: 'Keeper Engine', icon: ScrollText },
+    { href: '/guardian/roundups', label: 'Spare Change Roundups', icon: Coins },
   ];
 
   return (

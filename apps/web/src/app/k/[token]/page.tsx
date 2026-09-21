@@ -165,62 +165,43 @@ export default function KidHomePage({ params }: { params: { token: string } }) {
         </div>
       </div>
 
-      {/* Fun Kid Exploration Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Kid Exploration Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Garden Card */}
         <Link
           href={`/k/${token}/garden`}
-          className="p-5 rounded-3xl border-3 border-ink bg-emerald-50 hover:bg-emerald-100 transition-all shadow-sticker flex flex-col justify-between group"
+          className="p-6 rounded-3xl border-3 border-ink bg-emerald-50 hover:bg-emerald-100 transition-all shadow-sticker flex flex-col justify-between group"
         >
-          <div className="space-y-2">
-            <div className="w-10 h-10 rounded-2xl bg-white border-2 border-ink flex items-center justify-center text-xl shadow-sticker-sm">
+          <div className="space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-white border-2 border-ink flex items-center justify-center text-2xl shadow-sticker-sm">
               🌱
             </div>
-            <h3 className="font-display font-extrabold text-base text-ink">Compound Garden</h3>
-            <p className="text-xs text-emerald-950 font-medium leading-relaxed">
-              Water your tree with $5 every week and watch it grow into a giant oak!
+            <h3 className="font-display font-extrabold text-lg text-ink">The Compound Garden</h3>
+            <p className="text-sm text-emerald-950 font-medium leading-relaxed">
+              Water your tree with small regular coins and watch patience transform a tiny sprout into a giant guardian oak!
             </p>
           </div>
-          <div className="pt-3 font-display font-bold text-xs text-emerald-800 flex items-center gap-1">
-            Play with the Garden <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+          <div className="pt-4 font-display font-bold text-sm text-emerald-800 flex items-center gap-1.5">
+            Play with the Garden Visualizer <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
           </div>
         </Link>
 
-        {/* Learn Hub */}
+        {/* Company Stories Card */}
         <Link
-          href={`/k/${token}/learn`}
-          className="p-5 rounded-3xl border-3 border-ink bg-amber-50 hover:bg-amber-100 transition-all shadow-sticker flex flex-col justify-between group"
+          href={`/k/${token}/moon`}
+          className="p-6 rounded-3xl border-3 border-ink bg-purple-50 hover:bg-purple-100 transition-all shadow-sticker flex flex-col justify-between group"
         >
-          <div className="space-y-2">
-            <div className="w-10 h-10 rounded-2xl bg-white border-2 border-ink flex items-center justify-center text-xl shadow-sticker-sm">
-              📚
+          <div className="space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-white border-2 border-ink flex items-center justify-center text-2xl shadow-sticker-sm">
+              🚀
             </div>
-            <h3 className="font-display font-extrabold text-base text-ink">Money Academy</h3>
-            <p className="text-xs text-amber-950 font-medium leading-relaxed">
-              Earn sticker badges by solving quick 1-minute puzzles about saving!
+            <h3 className="font-display font-extrabold text-lg text-ink">Explore Company Stories</h3>
+            <p className="text-sm text-purple-950 font-medium leading-relaxed">
+              Read how reusable rockets land backwards, how robotic fingers hold delicate eggs, and why prices change like weather.
             </p>
           </div>
-          <div className="pt-3 font-display font-bold text-xs text-amber-800 flex items-center gap-1">
-            Collect Stickers <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
-          </div>
-        </Link>
-
-        {/* Ask Chip Card */}
-        <Link
-          href={`/k/${token}/ask`}
-          className="p-5 rounded-3xl border-3 border-ink bg-purple-50 hover:bg-purple-100 transition-all shadow-sticker flex flex-col justify-between group"
-        >
-          <div className="space-y-2">
-            <div className="w-10 h-10 rounded-2xl bg-white border-2 border-ink flex items-center justify-center text-xl shadow-sticker-sm">
-              💬
-            </div>
-            <h3 className="font-display font-extrabold text-base text-ink">Ask Mom & Dad</h3>
-            <p className="text-xs text-purple-950 font-medium leading-relaxed">
-              Send safe notes about chores or ask Pip why prices change like the weather.
-            </p>
-          </div>
-          <div className="pt-3 font-display font-bold text-xs text-purple-800 flex items-center gap-1">
-            Send a Question <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+          <div className="pt-4 font-display font-bold text-sm text-purple-800 flex items-center gap-1.5">
+            Discover Companies & Quizzes <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
           </div>
         </Link>
       </div>

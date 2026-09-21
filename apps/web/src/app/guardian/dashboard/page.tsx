@@ -67,24 +67,6 @@ export default function GuardianDashboard() {
     triggerToast(`Successfully deposited $${amt.toFixed(2)} USDC into Save Jar!`);
   };
 
-  const handleApproveRequest = (reqId: string, amount?: number) => {
-    if (!vault) return;
-    const updatedRequests = vault.requests.map((r) => 
-      r.id === reqId ? { ...r, status: 'COMPLETED' as const } : r
-    );
-    let newSave = vault.saveBalanceUsdc;
-    if (amount && newSave >= amount) {
-      newSave -= amount;
-    }
-    const updated: VaultState = {
-      ...vault,
-      saveBalanceUsdc: newSave,
-      requests: updatedRequests,
-    };
-    setVault(updated);
-    saveVault(updated);
-    triggerToast('Request approved! Balance updated.');
-  };
 
   const handleRunKeeper = () => {
     // Simulate keeper evaluation
@@ -248,54 +230,40 @@ export default function GuardianDashboard() {
         <div className="bg-white p-6 rounded-3xl border-3 border-ink shadow-sticker space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold font-display text-ink flex items-center gap-2">
-              📬 Kid Requests
+              🪙 Spare Change Roundups
             </h2>
-            <span className="text-xs font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full border border-amber-300">
-              {vault.requests.filter(r => r.status === 'PENDING').length} pending
+            <span className="text-xs font-bold bg-emerald-100 text-emerald-900 px-2.5 py-0.5 rounded-full border border-emerald-300">
+              Active • 1x
             </span>
           </div>
 
-          {vault.requests.length === 0 ? (
-            <p className="text-sm text-slate-500 py-4 text-center">No pending requests right now.</p>
-          ) : (
-            <div className="space-y-3">
-              {vault.requests.map((req) => (
-                <div
-                  key={req.id}
-                  className="p-4 rounded-2xl border-2 border-ink bg-slate-50 flex items-center justify-between gap-3"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-ink">
-                        {req.type === 'ADD_MONEY' ? `💰 Ask for $${req.amount}` : '📖 Learning Question'}
-                      </span>
-                      {req.status === 'COMPLETED' ? (
-                        <span className="text-[10px] bg-green-200 text-green-800 font-bold px-1.5 py-0.5 rounded">Approved</span>
-                      ) : (
-                        <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-1.5 py-0.5 rounded">Pending</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-600 mt-1">{req.topic}</p>
-                    <span className="text-[10px] text-slate-400">
-                      {new Date(req.timestamp).toLocaleDateString()}
-                    </span>
-                  </div>
-
-                  {req.status === 'PENDING' && (
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => handleApproveRequest(req.id, req.amount)}
-                        className="p-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl border border-ink shadow-sticker-sm"
-                        title="Approve"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+          <div className="p-4 rounded-2xl border-2 border-ink bg-amber-50/60 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-600">Accumulated This Week:</span>
+              <span className="font-numbers font-black text-ink text-base">$2.17 USDC</span>
             </div>
-          )}
+            <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
+              <span>Auto-Split to Save Jar (80%):</span>
+              <span className="font-bold text-emerald-700">+$1.74 USDC</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
+              <span>Auto-Split to Moon Jar (20%):</span>
+              <span className="font-bold text-purple-700">+$0.43 USDC</span>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Every transaction rounds up micro-cents into {vault.metadata.nickname}'s dual vault without requiring manual transfers.
+          </p>
+
+          <div className="pt-1">
+            <Link href="/guardian/roundups">
+              <Button variant="secondary" size="sm" className="w-full flex items-center justify-center gap-1.5">
+                <Coins className="w-4 h-4 text-amber-600" />
+                Configure Roundups & Auto-Inflows →
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Right: Automated Keeper Feed */}

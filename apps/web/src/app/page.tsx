@@ -33,29 +33,29 @@ export default function HomePage() {
         <Pip expression="happy" size={160} bubbleText="Hi there! Ready to start saving for the stars?" />
         
         <h1 className="mt-8 text-4xl sm:text-5xl font-black text-ink tracking-tight font-display">
-          Smart savings for kids, <br />
-          <span className="text-grape underline decoration-wavy decoration-sun">backed by the future</span>.
+          The Autonomous Pre-IPO <br />
+          <span className="text-grape underline decoration-wavy decoration-sun">Savings Vault on Solana</span>.
         </h1>
 
-        <p className="mt-4 text-lg text-slate-600 max-w-xl font-body">
-          Moonjar combines a safe savings account in USDC with an exciting exploration into world-changing private companies like SpaceX and OpenAI. Built with guardrails parents trust.
+        <p className="mt-4 text-lg text-slate-600 max-w-2xl font-body">
+          Moonjar combines a bedrock savings vault in USDC with algorithmic micro-investing into tokenized private equities (SpaceX, OpenAI, Anduril) powered by PreStocks. Built with mathematical risk caps parents trust.
         </p>
 
         {/* Action CTAs */}
         <div className="mt-8 flex flex-wrap gap-4 justify-center">
-          <Link href="/guardian/onboarding">
+          <Link href="/guardian/dashboard">
             <Button variant="primary" size="lg" className="flex items-center gap-2">
-              <Shield className="w-5 h-5" /> Open a Child's Vault
+              <Shield className="w-5 h-5" /> Launch Guardian Vault
             </Button>
           </Link>
           <Link href="/k/demo-token">
             <Button variant="grape" size="lg" className="flex items-center gap-2">
-              <Rocket className="w-5 h-5" /> Explore Kid's View
+              <Rocket className="w-5 h-5" /> Explore Kid Experience
             </Button>
           </Link>
-          <Link href="/gift/demo-gift">
+          <Link href="/guardian/baskets">
             <Button variant="secondary" size="lg" className="flex items-center gap-2">
-              <Heart className="w-5 h-5 text-rose" /> Send a Gift
+              <Sparkles className="w-5 h-5 text-amber-500" /> PreStocks Baskets
             </Button>
           </Link>
         </div>

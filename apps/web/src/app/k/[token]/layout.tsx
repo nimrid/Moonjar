@@ -45,11 +45,8 @@ export default function KidLayout({
 
   const navItems = [
     { href: `/k/${token}`, label: 'My Jars', icon: Home },
-    { href: `/k/${token}/moon`, label: 'Moon Jar', icon: Rocket },
-    { href: `/k/${token}/garden`, label: 'Garden', icon: Sprout },
-    { href: `/k/${token}/learn`, label: 'Learn', icon: BookOpen },
-    { href: `/k/${token}/ask`, label: 'Ask Pip', icon: MessageCircleQuestion },
-    { href: `/k/${token}/graduate`, label: 'Graduation', icon: GraduationCap },
+    { href: `/k/${token}/moon`, label: 'Inside Moon Jar', icon: Rocket },
+    { href: `/k/${token}/garden`, label: 'Compound Garden', icon: Sprout },
   ];
 
   return (
