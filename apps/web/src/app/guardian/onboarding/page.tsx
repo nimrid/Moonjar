@@ -2,13 +2,14 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useWallet } from '@solana/wallet-adapter-react';
+import { useGuardianWallet } from '@/components/providers/PrivySolanaProvider';
 import { Button } from '@/components/ui/Button';
 import { Slider } from '@/components/ui/Slider';
 import { Pip } from '@/components/mascot/Pip';
 import { BASKET_PRESETS, AnimalAvatar, AgeBand } from '@moonjar/shared';
 import { saveVault, VaultState } from '@/lib/store';
-import { ShieldCheck, ArrowRight, Lock, Check } from 'lucide-react';
+import { PublicKey } from '@solana/web3.js';
+import { ShieldCheck, ArrowRight, Lock, Check, Loader2, AlertCircle } from 'lucide-react';
 
 const AVATARS: { id: AnimalAvatar; name: string; emoji: string }[] = [
   { id: 'otter', name: 'Otter', emoji: '🦦' },
@@ -21,12 +22,12 @@ const AVATARS: { id: AnimalAvatar; name: string; emoji: string }[] = [
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { publicKey } = useWallet();
+  const { publicKey, connected, login, createVault } = useGuardianWallet();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // Step 1: Identity
-  const [nickname, setNickname] = useState('Maya');
+  const [nickname, setNickname] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState<AnimalAvatar>('otter');
   const [ageBand, setAgeBand] = useState<AgeBand>('little');
 
@@ -37,51 +38,89 @@ export default function OnboardingPage() {
 
   // Step 3: Vault Settings
   const [moonCapBps, setMoonCapBps] = useState(2000); // 20%
-  const [initialDeposit, setInitialDeposit] = useState(50);
+  const [initialDeposit, setInitialDeposit] = useState(25);
   const [selectedBasket, setSelectedBasket] = useState(BASKET_PRESETS[0].id);
   const [unlockYears, setUnlockYears] = useState(10); // 10 years until 18
 
-  const handleFinish = () => {
-    const preset = BASKET_PRESETS.find((b) => b.id === selectedBasket) || BASKET_PRESETS[0];
-    const newVault: VaultState = {
-      metadata: {
-        vaultAddress: 'Vlt' + Math.random().toString(36).substring(2, 9) + '7xK',
-        nickname,
-        avatar: selectedAvatar,
-        ageBand,
-        unlockDate: new Date(Date.now() + unlockYears * 365 * 24 * 3600 * 1000).toISOString(),
-        guardianWallet: publicKey ? publicKey.toBase58() : 'DemoGuardianWallet1111111111111111',
-        capabilityToken: 'kid-' + Math.random().toString(36).substring(2, 10),
-        createdAt: new Date().toISOString(),
-      },
-      saveBalanceUsdc: initialDeposit,
-      moonBalanceUsdc: 0,
-      moonCostBasisUsdc: 0,
-      totalDepositedUsdc: initialDeposit,
-      moonCapBps,
-      isPaused: false,
-      isGraduated: false,
-      matchBalanceUsdc: initialDeposit * 0.01,
-      allocations: preset.entries.map((e) => ({
-        symbol: e.symbol,
-        mint: e.mint,
-        weightBps: e.weightBps,
-        sharesOwned: 0,
-        currentValueUsd: 0,
-      })),
-      decisions: [],
-      requests: [],
-      completedLessons: [],
-    };
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-    saveVault(newVault);
-    router.push('/guardian/dashboard');
+  const handleFinish = async () => {
+    if (!connected || !publicKey) {
+      login();
+      return;
+    }
+
+    const finalNickname = nickname.trim() || 'Scout';
+    setIsCreating(true);
+    setCreateError(null);
+
+    const preset = BASKET_PRESETS.find((b) => b.id === selectedBasket) || BASKET_PRESETS[0];
+
+    try {
+      const basketEntries = preset.entries.map((e) => ({
+        mint: new PublicKey(e.mint),
+        weightBps: e.weightBps,
+      }));
+
+      // Call on-chain createVault via connected Privy embedded wallet
+      const { vaultAddress } = await createVault({
+        nickname: finalNickname,
+        moonCapBps,
+        basket: basketEntries,
+        unlockYears,
+        initialDepositUsdc: initialDeposit > 0 ? initialDeposit : undefined,
+      });
+
+      const newVault: VaultState = {
+        metadata: {
+          vaultAddress,
+          nickname: finalNickname,
+          avatar: selectedAvatar,
+          ageBand,
+          unlockDate: new Date(Date.now() + unlockYears * 365 * 24 * 3600 * 1000).toISOString(),
+          guardianWallet: publicKey.toBase58(),
+          capabilityToken: 'kid-' + Math.random().toString(36).substring(2, 10),
+          createdAt: new Date().toISOString(),
+        },
+        saveBalanceUsdc: initialDeposit,
+        moonBalanceUsdc: 0,
+        moonCostBasisUsdc: 0,
+        totalDepositedUsdc: initialDeposit,
+        moonCapBps,
+        isPaused: false,
+        isGraduated: false,
+        matchBalanceUsdc: initialDeposit * 0.01,
+        allocations: preset.entries.map((e) => ({
+          symbol: e.symbol,
+          mint: e.mint,
+          weightBps: e.weightBps,
+          sharesOwned: 0,
+          currentValueUsd: 0,
+        })),
+        decisions: [],
+        requests: [],
+        completedLessons: [],
+        roundupTransactions: [],
+      };
+
+      saveVault(newVault);
+      router.push('/guardian/dashboard');
+    } catch (err: any) {
+      console.error('Failed to create on-chain vault:', err);
+      setCreateError(
+        err.message ||
+          'Failed to initialize vault on-chain. Please ensure your wallet has SOL to pay account rent.'
+      );
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
-    <div className="max-w-2xl mx-auto py-8">
+    <div className="max-w-2xl mx-auto px-3 sm:px-0 py-6 sm:py-8">
       {/* Progress header */}
-      <div className="mb-8">
+      <div className="mb-6 sm:mb-8">
         <div className="flex items-center justify-between mb-2">
           <span className="font-display font-bold text-sm text-slate-500">
             Step {step} of 3
@@ -98,14 +137,16 @@ export default function OnboardingPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border-3 border-ink shadow-sticker-lg p-6 sm:p-8">
+      <div className="bg-white rounded-3xl border-3 border-ink shadow-sticker-lg p-4 sm:p-8">
         {step === 1 && (
           <div className="space-y-6">
-            <div className="flex items-center gap-4 border-b-2 border-slate-100 pb-4">
-              <Pip expression="curious" size={80} />
+            <div className="flex items-center gap-3 sm:gap-4 border-b-2 border-slate-100 pb-4">
+              <div className="shrink-0">
+                <Pip expression="curious" size={72} />
+              </div>
               <div>
-                <h2 className="text-2xl font-bold font-display text-ink">Who is this vault for?</h2>
-                <p className="text-sm text-slate-600">
+                <h2 className="text-xl sm:text-2xl font-bold font-display text-ink">Who is this vault for?</h2>
+                <p className="text-xs sm:text-sm text-slate-600">
                   We use zero-knowledge principles. Real names are never written on-chain!
                 </p>
               </div>
@@ -154,7 +195,7 @@ export default function OnboardingPage() {
               <label className="block text-sm font-bold font-display text-ink mb-2">
                 Select Reading Level
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => setAgeBand('little')}
@@ -193,47 +234,49 @@ export default function OnboardingPage() {
 
         {step === 2 && (
           <div className="space-y-6">
-            <div className="flex items-center gap-4 border-b-2 border-slate-100 pb-4">
-              <Pip expression="thinking" size={80} />
+            <div className="flex items-center gap-3 sm:gap-4 border-b-2 border-slate-100 pb-4">
+              <div className="shrink-0">
+                <Pip expression="thinking" size={72} />
+              </div>
               <div>
-                <h2 className="text-2xl font-bold font-display text-ink">Parental Consent & Disclosures</h2>
-                <p className="text-sm text-slate-600">
+                <h2 className="text-xl sm:text-2xl font-bold font-display text-ink">Parental Consent & Disclosures</h2>
+                <p className="text-xs sm:text-sm text-slate-600">
                   Please review and acknowledge these essential safety safeguards.
                 </p>
               </div>
             </div>
 
             <div className="space-y-4">
-              <label className="flex items-start gap-3 p-4 rounded-2xl border-2 border-ink bg-slate-50 cursor-pointer hover:bg-slate-100">
+              <label className="flex items-start gap-3 p-3.5 sm:p-4 rounded-2xl border-2 border-ink bg-slate-50 cursor-pointer hover:bg-slate-100">
                 <input
                   type="checkbox"
                   checked={consent1}
                   onChange={(e) => setConsent1(e.target.checked)}
-                  className="mt-1 w-5 h-5 accent-purple-600 rounded border-2 border-ink"
+                  className="mt-1 w-5 h-5 accent-purple-600 rounded border-2 border-ink shrink-0"
                 />
                 <span className="text-xs sm:text-sm text-slate-700 leading-snug">
                   <strong>Risk & Illiquidity Disclosure:</strong> I understand that PreStocks represent synthetic tokens tracking private company valuations. They are volatile, illiquid, and carry financial risk with no guaranteed returns.
                 </span>
               </label>
 
-              <label className="flex items-start gap-3 p-4 rounded-2xl border-2 border-ink bg-slate-50 cursor-pointer hover:bg-slate-100">
+              <label className="flex items-start gap-3 p-3.5 sm:p-4 rounded-2xl border-2 border-ink bg-slate-50 cursor-pointer hover:bg-slate-100">
                 <input
                   type="checkbox"
                   checked={consent2}
                   onChange={(e) => setConsent2(e.target.checked)}
-                  className="mt-1 w-5 h-5 accent-purple-600 rounded border-2 border-ink"
+                  className="mt-1 w-5 h-5 accent-purple-600 rounded border-2 border-ink shrink-0"
                 />
                 <span className="text-xs sm:text-sm text-slate-700 leading-snug">
                   <strong>Guardrails & Moon Cap:</strong> I understand that the Moon Jar operates under a cost-basis cap (maximum 50%) that I configure, ensuring the majority of my child's savings remains securely in USDC.
                 </span>
               </label>
 
-              <label className="flex items-start gap-3 p-4 rounded-2xl border-2 border-ink bg-slate-50 cursor-pointer hover:bg-slate-100">
+              <label className="flex items-start gap-3 p-3.5 sm:p-4 rounded-2xl border-2 border-ink bg-slate-50 cursor-pointer hover:bg-slate-100">
                 <input
                   type="checkbox"
                   checked={consent3}
                   onChange={(e) => setConsent3(e.target.checked)}
-                  className="mt-1 w-5 h-5 accent-purple-600 rounded border-2 border-ink"
+                  className="mt-1 w-5 h-5 accent-purple-600 rounded border-2 border-ink shrink-0"
                 />
                 <span className="text-xs sm:text-sm text-slate-700 leading-snug">
                   <strong>COPPA & Privacy Agreement:</strong> I grant consent for this educational tool. I acknowledge that the kid's view is strictly read-only, collects no personal data, and serves no third-party advertisements or trackers.
@@ -241,13 +284,13 @@ export default function OnboardingPage() {
               </label>
             </div>
 
-            <div className="flex gap-3 pt-4">
-              <Button variant="secondary" className="flex-1" onClick={() => setStep(1)}>
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+              <Button variant="secondary" className="w-full sm:w-1/3" onClick={() => setStep(1)}>
                 Back
               </Button>
               <Button
                 variant="primary"
-                className="flex-1"
+                className="w-full sm:flex-1"
                 disabled={!consent1 || !consent2 || !consent3}
                 onClick={() => setStep(3)}
               >
@@ -259,11 +302,13 @@ export default function OnboardingPage() {
 
         {step === 3 && (
           <div className="space-y-6">
-            <div className="flex items-center gap-4 border-b-2 border-slate-100 pb-4">
-              <Pip expression="happy" size={80} />
+            <div className="flex items-center gap-3 sm:gap-4 border-b-2 border-slate-100 pb-4">
+              <div className="shrink-0">
+                <Pip expression="happy" size={72} />
+              </div>
               <div>
-                <h2 className="text-2xl font-bold font-display text-ink">Configure {nickname}'s Vault</h2>
-                <p className="text-sm text-slate-600">
+                <h2 className="text-xl sm:text-2xl font-bold font-display text-ink">Configure {nickname}'s Vault</h2>
+                <p className="text-xs sm:text-sm text-slate-600">
                   Set the rules for how savings grow and are protected.
                 </p>
               </div>
@@ -300,12 +345,12 @@ export default function OnboardingPage() {
                         : 'bg-white hover:bg-slate-50'
                     }`}
                   >
-                    <div>
-                      <span className="font-display font-bold text-sm text-ink block">{preset.name}</span>
-                      <span className="text-xs text-slate-500">{preset.description}</span>
+                    <div className="min-w-0 pr-2">
+                      <span className="font-display font-bold text-sm text-ink block truncate">{preset.name}</span>
+                      <span className="text-xs text-slate-500 line-clamp-1">{preset.description}</span>
                     </div>
                     {selectedBasket === preset.id && (
-                      <span className="w-6 h-6 rounded-full bg-grape text-white flex items-center justify-center text-xs">
+                      <span className="w-6 h-6 rounded-full bg-grape text-white flex items-center justify-center text-xs shrink-0">
                         <Check className="w-3.5 h-3.5" />
                       </span>
                     )}
@@ -342,12 +387,42 @@ export default function OnboardingPage() {
               />
             </div>
 
-            <div className="flex gap-3 pt-4">
-              <Button variant="secondary" className="flex-1" onClick={() => setStep(2)}>
+            {createError && (
+              <div className="p-4 bg-red-50 border-2 border-red-300 rounded-2xl flex items-start gap-3 text-red-800 text-sm">
+                <AlertCircle className="w-5 h-5 shrink-0 text-red-600 mt-0.5" />
+                <div>
+                  <div className="font-bold">Deployment Notice:</div>
+                  <div className="mt-0.5">{createError}</div>
+                  <div className="mt-1 text-xs text-red-600">
+                    Tip: If running on local Surfpool, run <code className="bg-red-100 px-1 py-0.5 rounded font-mono">pnpm fund {publicKey?.toBase58().slice(0, 8)}... 500</code> in terminal to fund your wallet with SOL and USDC.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4">
+              <Button
+                variant="secondary"
+                className="w-full sm:w-1/3"
+                onClick={() => setStep(2)}
+                disabled={isCreating}
+              >
                 Back
               </Button>
-              <Button variant="leaf" className="flex-1" onClick={handleFinish}>
-                Deploy & Activate Vault 🎉
+              <Button
+                variant="leaf"
+                className="w-full sm:flex-1 text-sm sm:text-base flex items-center justify-center gap-2"
+                onClick={handleFinish}
+                disabled={isCreating}
+              >
+                {isCreating ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Deploying On-Chain Vault...
+                  </>
+                ) : (
+                  'Deploy & Activate Vault 🎉'
+                )}
               </Button>
             </div>
           </div>

@@ -5,6 +5,7 @@ use anchor_lang::solana_program::{
 };
 use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token_interface::{self, Mint as InterfaceMint, TokenAccount as InterfaceTokenAccount, TokenInterface};
 
 declare_id!("hVSAPTYZCboWUcmzGcAJkC8jLSWcmJ4VtBjNpW4DmWT");
 
@@ -166,6 +167,7 @@ pub mod vault {
     }
 
     pub fn deposit(ctx: Context<Deposit>, amount: u64, memo: [u8; 32]) -> Result<()> {
+        require!(!ctx.accounts.vault.graduated, ErrorCode::Graduated);
         require!(amount > 0, ErrorCode::InsufficientSave);
 
         // Transfer USDC from sender to Save Jar
@@ -255,7 +257,11 @@ pub mod vault {
         let mut metas = Vec::with_capacity(ctx.remaining_accounts.len());
         for acc in ctx.remaining_accounts.iter() {
             if acc.key == &vault.key() {
-                metas.push(AccountMeta::new_readonly(*acc.key, true));
+                if acc.is_writable {
+                    metas.push(AccountMeta::new(*acc.key, true));
+                } else {
+                    metas.push(AccountMeta::new_readonly(*acc.key, true));
+                }
             } else if acc.is_writable {
                 metas.push(AccountMeta::new(*acc.key, acc.is_signer));
             } else {
@@ -359,6 +365,12 @@ pub mod vault {
         Ok(())
     }
 
+    /// Allows the guardian to withdraw any token held by the vault PDA at any time,
+    /// regardless of `unlock_ts` or `paused` state. This is intentional: the guardian
+    /// retains emergency exit rights over funds they deposited. Pre-unlock withdrawals
+    /// are a guardian-only action and do not affect the child's experience unless the
+    /// guardian deliberately empties the vault. Post-graduation, the child_authority
+    /// becomes the guardian and inherits this right.
     pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         let vault = &mut ctx.accounts.vault;
         let guardian_key = vault.guardian;
@@ -375,17 +387,18 @@ pub mod vault {
 
         let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.key(),
-            Transfer {
+            token_interface::TransferChecked {
                 from: ctx.accounts.vault_token.to_account_info(),
+                mint: ctx.accounts.mint.to_account_info(),
                 to: ctx.accounts.guardian_token.to_account_info(),
                 authority: vault.to_account_info(),
             },
             signer,
         );
-        token::transfer(transfer_ctx, amount)?;
+        token_interface::transfer_checked(transfer_ctx, amount, ctx.accounts.mint.decimals)?;
 
         // If withdrawing USDC, adjust total_deposited accordingly
-        if ctx.accounts.vault_token.mint == ctx.accounts.config.usdc_mint {
+        if ctx.accounts.mint.key() == ctx.accounts.config.usdc_mint {
             vault.total_deposited = vault.total_deposited.saturating_sub(amount);
         }
 
@@ -544,63 +557,66 @@ pub struct ExecuteBuy<'info> {
         seeds = [b"config"],
         bump = config.bump
     )]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
 
     #[account(
         mut,
         seeds = [b"vault", vault.guardian.as_ref(), &vault.child_index.to_le_bytes()],
         bump = vault.bump
     )]
-    pub vault: Account<'info, ChildVault>,
+    pub vault: Box<Account<'info, ChildVault>>,
 
     #[account(
         mut,
         associated_token::mint = usdc_mint,
         associated_token::authority = vault,
     )]
-    pub save_jar_token: Account<'info, TokenAccount>,
+    pub save_jar_token: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         associated_token::mint = mint_out,
         associated_token::authority = vault,
+        associated_token::token_program = token_out_program,
     )]
-    pub moon_jar_token: Account<'info, TokenAccount>,
+    pub moon_jar_token: Box<InterfaceAccount<'info, InterfaceTokenAccount>>,
 
     #[account(address = config.usdc_mint)]
-    pub usdc_mint: Account<'info, Mint>,
+    pub usdc_mint: Box<Account<'info, Mint>>,
 
-    pub mint_out: Account<'info, Mint>,
+    pub mint_out: Box<InterfaceAccount<'info, InterfaceMint>>,
 
     /// CHECK: The external swap program (Jupiter or mock swap)
     pub swap_program: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
+    pub token_out_program: Interface<'info, TokenInterface>,
 }
 
 #[derive(Accounts)]
 pub struct ApplyMatch<'info> {
+    #[account(constraint = caller.key() == config.keeper @ ErrorCode::NotKeeper)]
     pub caller: Signer<'info>,
 
     #[account(
         seeds = [b"config"],
         bump = config.bump
     )]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
 
     #[account(
         mut,
         seeds = [b"vault", vault.guardian.as_ref(), &vault.child_index.to_le_bytes()],
         bump = vault.bump
     )]
-    pub vault: Account<'info, ChildVault>,
+    pub vault: Box<Account<'info, ChildVault>>,
 
     #[account(
         mut,
         associated_token::mint = usdc_mint,
         associated_token::authority = vault,
     )]
-    pub save_jar_token: Account<'info, TokenAccount>,
+    pub save_jar_token: Box<Account<'info, TokenAccount>>,
 
     #[account(
         seeds = [b"match_pool"],
@@ -614,10 +630,10 @@ pub struct ApplyMatch<'info> {
         associated_token::mint = usdc_mint,
         associated_token::authority = match_pool,
     )]
-    pub match_pool_token: Account<'info, TokenAccount>,
+    pub match_pool_token: Box<Account<'info, TokenAccount>>,
 
     #[account(address = config.usdc_mint)]
-    pub usdc_mint: Account<'info, Mint>,
+    pub usdc_mint: Box<Account<'info, Mint>>,
 
     pub token_program: Program<'info, Token>,
 }
@@ -678,15 +694,17 @@ pub struct Withdraw<'info> {
         mut,
         constraint = vault_token.owner == vault.key()
     )]
-    pub vault_token: Account<'info, TokenAccount>,
+    pub vault_token: InterfaceAccount<'info, InterfaceTokenAccount>,
 
     #[account(
         mut,
         constraint = guardian_token.owner == guardian.key()
     )]
-    pub guardian_token: Account<'info, TokenAccount>,
+    pub guardian_token: InterfaceAccount<'info, InterfaceTokenAccount>,
 
-    pub token_program: Program<'info, Token>,
+    pub mint: InterfaceAccount<'info, InterfaceMint>,
+
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 #[derive(Accounts)]

@@ -9,6 +9,15 @@ const nextConfig = {
       os: false,
       path: false,
       crypto: false,
+      '@farcaster/mini-app-solana': false,
+      '@abstract-foundation/agw-client': false,
+      permissionless: false,
+    };
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@farcaster/mini-app-solana': false,
+      '@abstract-foundation/agw-client': false,
+      permissionless: false,
     };
     config.externals.push('pino-pretty', 'lokijs', 'encoding');
     return config;

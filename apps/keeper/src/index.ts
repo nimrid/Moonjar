@@ -1,61 +1,124 @@
-import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  TransactionMessage,
+  VersionedTransaction,
+  AddressLookupTableAccount,
+  ComputeBudgetProgram,
+} from '@solana/web3.js';
+import * as anchor from '@coral-xyz/anchor';
+import { Program, BN } from '@coral-xyz/anchor';
+import {
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
+  createAssociatedTokenAccountIdempotent,
+} from '@solana/spl-token';
 import {
   PRESTOCKS_LIST,
   PreStockToken,
   BuyDecisionLog,
   calculatePremiumPct,
   getPriceCheck,
-  getExplorerCopy,
 } from '@moonjar/shared';
+import * as fs from 'fs';
+import * as path from 'path';
 import * as dotenv from 'dotenv';
+import vaultIdl from '../../../target/idl/vault.json';
 
 dotenv.config();
 
-interface MonitoredVault {
-  address: string;
-  guardian: string;
-  nickname: string;
-  saveBalanceUsdc: number;
-  moonBalanceUsdc: number;
-  moonCostBasisUsdc: number;
-  totalDepositedUsdc: number;
-  moonCapBps: number; // 2000 = 20%
-  isPaused: boolean;
-  basket: { symbol: string; targetWeightBps: number }[];
+/** Fetch with a hard timeout. Throws if the request takes longer than `ms` ms. */
+async function fetchWithTimeout(url: string, options: RequestInit = {}, ms = 10_000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-const DEMO_VAULTS: MonitoredVault[] = [
-  {
-    address: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-    guardian: 'BBNyzG9Kn1xf8ZFbwK2nKr3XW4MGr4XE8pQ9iJ1rsi57',
-    nickname: 'Leo The Explorer',
-    saveBalanceUsdc: 185.50,
-    moonBalanceUsdc: 38.75,
-    moonCostBasisUsdc: 32.00,
-    totalDepositedUsdc: 217.50,
-    moonCapBps: 2000,
-    isPaused: false,
-    basket: [
-      { symbol: 'SPACEX', targetWeightBps: 4000 },
-      { symbol: 'ANDURIL', targetWeightBps: 3500 },
-      { symbol: 'FIGUREAI', targetWeightBps: 2500 },
-    ],
-  },
-];
+const MAINNET_USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+const RPC_URL = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
+const PROGRAM_ID = new PublicKey('hVSAPTYZCboWUcmzGcAJkC8jLSWcmJ4VtBjNpW4DmWT');
 
-async function evaluateVault(vault: MonitoredVault): Promise<BuyDecisionLog | null> {
+let liveTokens: PreStockToken[] = PRESTOCKS_LIST;
+
+async function refreshLiveTokens() {
+  try {
+    const res = await fetchWithTimeout('https://prestocks.com/api/prestocks');
+    if (res.ok) {
+      const data: any = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        liveTokens = data;
+        console.log(`[Keeper] 📡 Synced ${liveTokens.length} live PreStocks from prestocks.com`);
+      }
+    }
+  } catch {
+    console.warn(`[Keeper] ⚠️ Using fallback PRESTOCKS_LIST`);
+  }
+}
+
+function loadKeeperKeypair(): Keypair {
+  if (process.env.KEEPER_PRIVATE_KEY) {
+    try {
+      const raw = JSON.parse(process.env.KEEPER_PRIVATE_KEY);
+      return Keypair.fromSecretKey(new Uint8Array(raw));
+    } catch {}
+  }
+  const defaultPath = path.join(process.env.HOME || '', '.config', 'solana', 'id.json');
+  const keyPath = process.env.KEEPER_KEYPAIR_PATH || defaultPath;
+  if (fs.existsSync(keyPath)) {
+    const raw = JSON.parse(fs.readFileSync(keyPath, 'utf-8'));
+    return Keypair.fromSecretKey(new Uint8Array(raw));
+  }
+  console.warn(`[Keeper] ⚠️ No keypair file found at ${keyPath}, generating ephemeral keypair.`);
+  return Keypair.generate();
+}
+
+export async function evaluateOnChainVault(
+  connection: Connection,
+  vaultProgram: Program,
+  keeper: Keypair,
+  configPda: PublicKey,
+  vaultPda: PublicKey,
+  vaultData: any
+): Promise<BuyDecisionLog | null> {
+  const nickname = `ChildVault #${vaultData.childIndex.toString()}`;
   console.log(`\n======================================================`);
-  console.log(`[Keeper] 🍯 Evaluating Vault: ${vault.nickname} (${vault.address.slice(0, 8)}...)`);
-  console.log(`  Save Balance: $${vault.saveBalanceUsdc.toFixed(2)} | Moon Cost Basis: $${vault.moonCostBasisUsdc.toFixed(2)} | Cap: ${vault.moonCapBps / 100}%`);
+  console.log(`[Keeper] 🍯 Evaluating On-Chain Vault: ${vaultPda.toBase58().slice(0, 8)}... (${nickname})`);
 
-  if (vault.isPaused) {
+  if (vaultData.paused) {
     console.log(`  ⏸️ Vault is currently paused by guardian. Skipping.`);
     return null;
   }
+  if (vaultData.graduated) {
+    console.log(`  🎓 Vault has graduated. Skipping.`);
+    return null;
+  }
 
-  // 1. Check cap headroom
-  const maxAllowedMoon = (vault.totalDepositedUsdc * vault.moonCapBps) / 10000;
-  const remainingCapHeadroom = maxAllowedMoon - vault.moonCostBasisUsdc;
+  // 1. Fetch Save Jar Token Account Balance
+  const saveJarAta = getAssociatedTokenAddressSync(MAINNET_USDC_MINT, vaultPda, true, TOKEN_PROGRAM_ID);
+  let saveBalanceUsdc = 0;
+  try {
+    const bal = await connection.getTokenAccountBalance(saveJarAta);
+    saveBalanceUsdc = bal.value.uiAmount || 0;
+  } catch {
+    console.log(`  ℹ️ Save Jar account ${saveJarAta.toBase58().slice(0, 8)} not found or zero.`);
+  }
+
+  const moonCostBasisUsdc = vaultData.moonCostBasis.toNumber() / 1e6;
+  const totalDepositedUsdc = vaultData.totalDeposited.toNumber() / 1e6;
+  const moonCapBps = vaultData.moonCapBps;
+
+  console.log(`  Save Balance: $${saveBalanceUsdc.toFixed(2)} | Moon Cost Basis: $${moonCostBasisUsdc.toFixed(2)} | Cap: ${moonCapBps / 100}%`);
+
+  // 2. Check cost-basis cap headroom
+  const maxAllowedMoon = (totalDepositedUsdc * moonCapBps) / 10000;
+  const remainingCapHeadroom = maxAllowedMoon - moonCostBasisUsdc;
 
   console.log(`  Cap Ceiling: $${maxAllowedMoon.toFixed(2)} | Remaining Headroom: $${remainingCapHeadroom.toFixed(2)}`);
 
@@ -64,37 +127,81 @@ async function evaluateVault(vault: MonitoredVault): Promise<BuyDecisionLog | nu
     return {
       id: `dec-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      vaultAddress: vault.address,
+      vaultAddress: vaultPda.toBase58(),
       symbol: 'PORTFOLIO',
-      action: 'BLOCKED_BY_CAP',
-      machineReason: `COST_BASIS_CAP_EXCEEDED (${vault.moonCostBasisUsdc.toFixed(2)} >= ${maxAllowedMoon.toFixed(2)})`,
+      action: 'SKIP',
+      premiumPct: 0,
+      machineReason: `COST_BASIS_CAP_EXCEEDED (${moonCostBasisUsdc.toFixed(2)} >= ${maxAllowedMoon.toFixed(2)})`,
       humanReasonKid: `Your Moon Jar is currently full! Pip is keeping all new coins safely in your Save Jar.`,
-      humanReasonGuardian: `Moon Jar cost basis has reached the guardian set limit of ${vault.moonCapBps / 100}%. Purchases blocked.`,
+      humanReasonGuardian: `Moon Jar cost basis has reached the guardian limit of ${moonCapBps / 100}%. Purchases blocked.`,
     };
   }
 
-  // 2. Target allocation deficit
-  // Pick the first asset in basket with target weight
-  const candidate = vault.basket[Math.floor(Math.random() * vault.basket.length)];
-  const tokenMeta = PRESTOCKS_LIST.find((p) => p.symbol === candidate.symbol) || PRESTOCKS_LIST[0];
+  // 3. Select target asset from basket
+  const basketEntries = vaultData.basket.slice(0, vaultData.basketLen);
+  if (!basketEntries || basketEntries.length === 0) {
+    console.log(`  ⚠️ Empty basket. Skipping.`);
+    return null;
+  }
 
-  // 3. Check valuation metric delta & premium
-  // In devnet / production, this queries Jupiter quote + implied valuation
-  const premium = calculatePremiumPct(tokenMeta.tokenPrice, tokenMeta.markPrice);
+  const candidate = basketEntries[Math.floor(Math.random() * basketEntries.length)];
+  const candidateMint: PublicKey = candidate.mint;
+
+  // Find token metadata — skip if unknown to avoid stale-price decisions
+  const tokenMeta =
+    liveTokens.find((p) => p.contract_address === candidateMint.toBase58()) ||
+    PRESTOCKS_LIST.find((p) => p.contract_address === candidateMint.toBase58());
+
+  if (!tokenMeta) {
+    console.log(`  ⚠️ Unknown mint ${candidateMint.toBase58().slice(0, 8)}... — skipping to avoid stale pricing.`);
+    return null;
+  }
+
+  // 4. Query live Jupiter Quote
+  const tradeAmountUsdc = Math.min(5.00, remainingCapHeadroom, saveBalanceUsdc);
+  if (tradeAmountUsdc < 1.00) {
+    console.log(`  ⚠️ Insufficient cash or headroom ($${tradeAmountUsdc.toFixed(2)} < $1.00). Skipping.`);
+    return null;
+  }
+
+  const tradeAmountLamports = Math.floor(tradeAmountUsdc * 1_000_000);
+  console.log(`  Querying Jupiter for $${tradeAmountUsdc.toFixed(2)} USDC -> ${tokenMeta.symbol}...`);
+
+  let quoteRes: any = null;
+  try {
+    const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${MAINNET_USDC_MINT.toBase58()}&outputMint=${candidateMint.toBase58()}&amount=${tradeAmountLamports}&slippageBps=100`;
+    quoteRes = await fetchWithTimeout(quoteUrl).then((r) => r.json());
+  } catch (err) {
+    console.error(`  ❌ Failed to fetch quote from Jupiter API:`, err);
+    return null;
+  }
+
+  if (!quoteRes || !quoteRes.outAmount) {
+    console.log(`  ⚠️ No swap route available for ${tokenMeta.symbol}. Skipping.`);
+    return null;
+  }
+
+  // 5. Calculate Valuation & Premium
+  // SpaceX has 9 decimals on mainnet
+  const tokensOut = Number(quoteRes.outAmount) / 1e9;
+  const executionPrice = tradeAmountUsdc / tokensOut;
+  const premium = calculatePremiumPct(executionPrice, tokenMeta.markPrice);
   const priceCheck = getPriceCheck(premium);
 
   console.log(`  Target Asset: ${tokenMeta.name} (${tokenMeta.symbol})`);
-  console.log(`  Token Price: $${tokenMeta.tokenPrice} | Mark Valuation: $${(tokenMeta.markValuation / 1e9).toFixed(1)}B`);
-  console.log(`  Secondary Premium: ${premium.toFixed(2)}% (Max Allowed: 10.0%)`);
+  console.log(`  Execution Price: $${executionPrice.toFixed(2)} | Mark Price: $${tokenMeta.markPrice.toFixed(2)}`);
+  console.log(`  Secondary Premium: ${premium.toFixed(2)}% (Max Safety Ceiling: 10.0%)`);
 
-  const buyAmountUsdc = Math.min(5.00, remainingCapHeadroom, vault.saveBalanceUsdc);
+  // M3: forceBuy is disallowed in production to prevent accidental safety bypass
+  const rawForceBuy = process.argv.includes('--force-buy') || process.env.FORCE_BUY === 'true';
+  const effectiveForceBuy = rawForceBuy && process.env.NODE_ENV !== 'production';
 
-  if (priceCheck.skipCycle) {
+  if (priceCheck.skipCycle && !effectiveForceBuy) {
     console.log(`  ❌ Price Check Failed: ${priceCheck.tag} - Premium ${premium.toFixed(2)}% > 10.0%`);
     return {
       id: `dec-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      vaultAddress: vault.address,
+      vaultAddress: vaultPda.toBase58(),
       symbol: tokenMeta.symbol,
       action: 'SKIP',
       premiumPct: premium,
@@ -104,57 +211,178 @@ async function evaluateVault(vault: MonitoredVault): Promise<BuyDecisionLog | nu
     };
   }
 
-  if (buyAmountUsdc < 1.00) {
-    console.log(`  ⚠️ Insufficient cash or cap headroom ($${buyAmountUsdc.toFixed(2)} < $1.00). Skipping.`);
-    return null;
+  if (priceCheck.skipCycle && effectiveForceBuy) {
+    console.log(`  ⚡ --force-buy flag detected: Overriding safety ceiling for test verification (${premium.toFixed(2)}%).`);
   }
 
-  // 4. Executing purchase simulation
-  const sharesOut = Number((buyAmountUsdc / tokenMeta.tokenPrice).toFixed(4));
-  const txSig = `devnet_${Math.random().toString(36).substring(2, 10)}`;
-
+  // 6. Execute On-Chain Buy via Jupiter CPI
   console.log(`  ✅ Price Check Passed: ${priceCheck.tag}`);
-  console.log(`  🚀 Executed Buy: $${buyAmountUsdc.toFixed(2)} USDC -> ${sharesOut} ${tokenMeta.symbol} shares`);
-  console.log(`  Devnet Signature: ${txSig}`);
+  console.log(`  🚀 Fetching Jupiter swap instruction for execution...`);
 
-  return {
-    id: `dec-${Date.now()}`,
-    timestamp: new Date().toISOString(),
-    vaultAddress: vault.address,
-    symbol: tokenMeta.symbol,
-    action: 'BUY',
-    premiumPct: premium,
-    amountInUsdc: Math.floor(buyAmountUsdc * 1_000_000),
-    amountOutTokens: Math.floor(sharesOut * 1_000_000),
-    machineReason: `PREMIUM_ACCEPTABLE (${premium.toFixed(2)}% <= 10.0%)`,
-    humanReasonKid: `Pip found a fair price for ${tokenMeta.name} and tucked a new piece into your Moon Jar!`,
-    humanReasonGuardian: `Executed algorithmic purchase for ${tokenMeta.symbol} at ${premium.toFixed(2)}% premium. $${buyAmountUsdc.toFixed(2)} allocated.`,
-    txSignature: txSig,
-  };
+  try {
+    const swapInsRes: any = await fetchWithTimeout(
+      'https://api.jup.ag/swap/v1/swap-instructions',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quoteResponse: quoteRes,
+          userPublicKey: vaultPda.toBase58(),
+        }),
+      }
+    ).then((r) => r.json());
+
+    const { swapInstruction, addressLookupTableAddresses } = swapInsRes;
+    if (!swapInstruction) {
+      console.error(`  ❌ Failed to obtain swapInstruction from Jupiter.`);
+      return null;
+    }
+
+    const jupProgramId = new PublicKey(swapInstruction.programId);
+    const cpiData = Buffer.from(swapInstruction.data, 'base64');
+
+    // Outer transaction: vault is signer in inner CPI, not in outer envelope
+    const remainingAccounts = swapInstruction.accounts.map((acc: any) => ({
+      pubkey: new PublicKey(acc.pubkey),
+      isWritable: acc.isWritable,
+      isSigner: false,
+    }));
+
+    // Ensure Moon Jar Token-2022 ATA exists
+    const moonJarTokenAta = getAssociatedTokenAddressSync(candidateMint, vaultPda, true, TOKEN_2022_PROGRAM_ID);
+    await createAssociatedTokenAccountIdempotent(
+      connection,
+      keeper,
+      candidateMint,
+      vaultPda,
+      {},
+      TOKEN_2022_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+      true
+    );
+
+    // Fetch address lookup table accounts to prevent transaction size overflow
+    const lookupTableAccounts = await Promise.all(
+      (addressLookupTableAddresses || []).map(async (address: string) => {
+        const res = await connection.getAddressLookupTable(new PublicKey(address));
+        return res.value;
+      })
+    ).then((tables) => tables.filter((t): t is AddressLookupTableAccount => t !== null));
+
+    console.log(`  Submitting on-chain execute_buy to MoonJar (VersionedTransaction V0)...`);
+    const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({ units: 800_000 });
+    const ix = await vaultProgram.methods
+      .executeBuy(
+        candidateMint,
+        new BN(tradeAmountLamports),
+        new BN(quoteRes.outAmount),
+        new BN(quoteRes.otherAmountThreshold),
+        cpiData
+      )
+      .accounts({
+        keeper: keeper.publicKey,
+        config: configPda,
+        vault: vaultPda,
+        saveJarToken: saveJarAta,
+        moonJarToken: moonJarTokenAta,
+        usdcMint: MAINNET_USDC_MINT,
+        mintOut: candidateMint,
+        swapProgram: jupProgramId,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        tokenOutProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .remainingAccounts(remainingAccounts)
+      .instruction();
+
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+    const messageV0 = new TransactionMessage({
+      payerKey: keeper.publicKey,
+      recentBlockhash: blockhash,
+      instructions: [modifyComputeUnits, ix],
+    }).compileToV0Message(lookupTableAccounts);
+
+    const versionedTx = new VersionedTransaction(messageV0);
+    versionedTx.sign([keeper]);
+
+    const txSig = await connection.sendTransaction(versionedTx, { skipPreflight: false, maxRetries: 3 });
+    await connection.confirmTransaction({ signature: txSig, blockhash, lastValidBlockHeight }, 'confirmed');
+
+    console.log(`  🎉 Transaction Confirmed! Signature: ${txSig}`);
+
+    return {
+      id: `dec-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      vaultAddress: vaultPda.toBase58(),
+      symbol: tokenMeta.symbol,
+      action: 'BUY',
+      premiumPct: premium,
+      amountInUsdc: tradeAmountLamports,
+      amountOutTokens: Number(quoteRes.outAmount),
+      machineReason: `PREMIUM_ACCEPTABLE (${premium.toFixed(2)}% <= 10.0%)`,
+      humanReasonKid: `Pip found a fair price for ${tokenMeta.name} and tucked a new piece into your Moon Jar!`,
+      humanReasonGuardian: `Executed algorithmic purchase for ${tokenMeta.symbol} at ${premium.toFixed(2)}% premium. $${tradeAmountUsdc.toFixed(2)} allocated.`,
+      txSignature: txSig,
+    };
+  } catch (err: any) {
+    console.error(`  ❌ Failed to execute on-chain buy:`, err);
+    return null;
+  }
 }
 
 async function runKeeper() {
   const isOnce = process.argv.includes('--once');
   console.log(`\n======================================================`);
-  console.log(`🌙 Moonjar Valuation Keeper Service starting...`);
+  console.log(`🌙 Moonjar Autonomous Valuation Keeper Service`);
   console.log(`Mode: ${isOnce ? 'One-Shot Execution' : 'Continuous Daemon (30s interval)'}`);
-  console.log(`Solana RPC: ${process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com'}`);
-  console.log(`PreStocks Monitored: ${PRESTOCKS_LIST.map((p) => p.symbol).join(', ')}`);
+  console.log(`Solana RPC: ${RPC_URL}`);
 
-  const loop = async () => {
-    for (const vault of DEMO_VAULTS) {
-      await evaluateVault(vault);
+  await refreshLiveTokens();
+
+  const keeper = loadKeeperKeypair();
+  console.log(`Keeper Authority: ${keeper.publicKey.toBase58()}`);
+
+  const connection = new Connection(RPC_URL, 'confirmed');
+  const wallet = new anchor.Wallet(keeper);
+  const provider = new anchor.AnchorProvider(connection, wallet, { commitment: 'confirmed' });
+  const vaultProgram = new Program(vaultIdl as anchor.Idl, provider);
+
+  const [configPda] = PublicKey.findProgramAddressSync([Buffer.from('config')], PROGRAM_ID);
+
+  const scan = async () => {
+    try {
+      // 1. Fetch all on-chain child vaults
+      const vaults = await (vaultProgram.account as any).childVault.all();
+      console.log(`\n[Keeper] 🔍 Scanned cluster: Found ${vaults.length} on-chain vault(s).`);
+
+      if (vaults.length === 0) {
+        console.log(`[Keeper] ℹ️ No on-chain vaults found on ${RPC_URL}. Waiting for guardian onboarding.`);
+        return;
+      }
+
+      for (const v of vaults) {
+        await evaluateOnChainVault(
+          connection,
+          vaultProgram,
+          keeper,
+          configPda,
+          v.publicKey,
+          v.account
+        );
+      }
+    } catch (err) {
+      console.error('[Keeper Scan Error]', err);
     }
   };
 
-  await loop();
+  await scan();
 
   if (!isOnce) {
-    setInterval(loop, 30000);
+    console.log(`\n[Keeper] Continuous evaluation active. Polling every 30 seconds...`);
+    setInterval(scan, 30000);
   }
 }
 
 runKeeper().catch((err) => {
-  console.error('[Keeper Error]', err);
+  console.error('[Keeper Fatal Error]', err);
   process.exit(1);
 });

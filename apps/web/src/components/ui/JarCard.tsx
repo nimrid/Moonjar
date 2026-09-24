@@ -49,11 +49,11 @@ export const JarCard: React.FC<JarCardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`relative p-5 rounded-3xl border-3 border-ink bg-white shadow-sticker transition-transform hover:-translate-y-1 hover:shadow-sticker-lg cursor-pointer select-none flex flex-col items-center ${className}`}
+      className={`relative p-4 sm:p-5 rounded-3xl border-3 border-ink bg-white shadow-sticker transition-transform hover:-translate-y-1 hover:shadow-sticker-lg cursor-pointer select-none flex flex-col items-center ${className}`}
     >
       {/* Badge Top */}
       <div
-        className={`px-3 py-1 rounded-full text-xs font-bold border-2 border-ink mb-3 ${
+        className={`px-3 py-1 rounded-full text-xs font-bold border-2 border-ink mb-2 sm:mb-3 ${
           isSave ? 'bg-sun text-ink' : 'bg-grape text-white'
         }`}
       >
@@ -61,7 +61,7 @@ export const JarCard: React.FC<JarCardProps> = ({
       </div>
 
       {/* Jar Graphic */}
-      <div className="relative w-44 h-48 my-2">
+      <div className="relative w-36 h-40 sm:w-44 sm:h-48 my-1 sm:my-2">
         <svg viewBox="0 0 160 180" className="w-full h-full drop-shadow-sm">
           {/* Defs for liquid gradients & patterns */}
           <defs>
@@ -153,7 +153,7 @@ export const JarCard: React.FC<JarCardProps> = ({
       <p className="text-xs text-slate-500 font-medium">{effectiveSubtitle}</p>
 
       <div className="mt-3 text-center">
-        <span className="text-3xl font-extrabold text-ink font-numbers tracking-tight">
+        <span className="text-2xl sm:text-3xl font-extrabold text-ink font-numbers tracking-tight">
           ${effectiveBalance.toFixed(2)}
         </span>
         {percentageOfPortfolio !== undefined && (

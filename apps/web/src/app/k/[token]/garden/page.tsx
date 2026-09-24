@@ -95,8 +95,8 @@ export default function CompoundGardenPage({ params }: { params: { token: string
           </p>
         </div>
 
-        <div className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0">
-          <Pip mood={isWatering ? 'cheering' : 'happy'} />
+        <div className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 flex items-center justify-center">
+          <Pip mood={isWatering ? 'cheering' : 'happy'} size={80} />
         </div>
       </div>
 

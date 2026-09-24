@@ -21,9 +21,9 @@ export const Pip: React.FC<PipProps> = ({
 }) => {
   const activeExpr = expression || mood || 'happy';
   return (
-    <div className={`relative inline-flex flex-col items-center ${className}`}>
+    <div className={`relative inline-flex flex-col items-center max-w-full ${className}`}>
       {bubbleText && (
-        <div className="mb-3 max-w-xs rounded-2xl border-3 border-ink bg-white px-4 py-2 text-sm font-bold text-ink shadow-sticker relative animate-bounce">
+        <div className="mb-3 max-w-xs sm:max-w-sm rounded-2xl border-3 border-ink bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-ink shadow-sticker relative animate-bounce">
           <p>{bubbleText}</p>
           <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-0 h-0 border-x-8 border-x-transparent border-t-8 border-t-ink" />
           <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-x-[6px] border-x-transparent border-t-[6px] border-t-white" />
@@ -35,7 +35,11 @@ export const Pip: React.FC<PipProps> = ({
         viewBox="0 0 160 160"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className="select-none"
+        className="select-none max-w-full h-auto"
+        style={{
+          maxWidth: typeof size === 'number' ? `${size}px` : size,
+          maxHeight: typeof size === 'number' ? `${size}px` : size,
+        }}
         aria-label={`Pip the Otter mascot: ${activeExpr}`}
         role="img"
       >

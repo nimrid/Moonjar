@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getStoredVault, VaultState } from '@/lib/store';
-import { PRESTOCKS_LIST } from '@moonjar/shared';
+import { getStoredVault, saveVault, VaultState } from '@/lib/store';
+import { usePreStocks } from '@/lib/usePreStocks';
 import { Pip } from '@/components/mascot/Pip';
 import { Button } from '@/components/ui/Button';
 import { 
@@ -17,13 +17,26 @@ import {
   Heart
 } from 'lucide-react';
 
+import { fetchOnChainVaultState } from '@/lib/onchain';
+
 export default function MoonJarPage({ params }: { params: { token: string } }) {
   const token = params.token;
   const [vault, setVault] = useState<VaultState | null>(null);
+  const { tokens } = usePreStocks();
 
   useEffect(() => {
-    setVault(getStoredVault());
-  }, []);
+    const v = getStoredVault();
+    setVault(v);
+    if (v?.metadata?.vaultAddress) {
+      fetchOnChainVaultState(v.metadata.vaultAddress, tokens).then((onChain) => {
+        if (onChain) {
+          const updated = { ...v, ...onChain };
+          setVault(updated);
+          saveVault(updated);
+        }
+      });
+    }
+  }, [tokens]);
 
   if (!vault) {
     return (
@@ -40,8 +53,8 @@ export default function MoonJarPage({ params }: { params: { token: string } }) {
     <div className="space-y-6">
       {/* Pip Speech Hero */}
       <div className="bg-gradient-to-br from-purple-100 via-indigo-50 to-pink-50 rounded-3xl border-3 border-ink p-6 shadow-sticker flex flex-col sm:flex-row items-center gap-6">
-        <div className="w-24 h-24 flex-shrink-0">
-          <Pip mood="curious" />
+        <div className="w-24 h-24 flex-shrink-0 flex items-center justify-center">
+          <Pip mood="curious" size={88} />
         </div>
 
         <div className="space-y-2 text-center sm:text-left">
@@ -75,12 +88,12 @@ export default function MoonJarPage({ params }: { params: { token: string } }) {
             Companies in Your World
           </h2>
           <span className="text-xs font-bold text-slate-500">
-            {PRESTOCKS_LIST.length} frontier pioneers
+            {tokens.length} frontier pioneers
           </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {PRESTOCKS_LIST.map((item) => {
+          {tokens.map((item) => {
             const owned = ownedMap.get(item.symbol);
             const isHeld = !!owned && owned.sharesOwned > 0;
 
@@ -142,7 +155,9 @@ export default function MoonJarPage({ params }: { params: { token: string } }) {
                     <div className="p-3 rounded-2xl bg-purple-50 border border-purple-200 flex items-center justify-between text-xs">
                       <div>
                         <span className="text-slate-500 font-bold">You own: </span>
-                        <span className="font-display font-extrabold text-ink">{owned.sharesOwned} shares</span>
+                        <span className="font-display font-extrabold text-ink">
+                          {owned.sharesOwned >= 1 ? owned.sharesOwned.toFixed(2) : owned.sharesOwned.toFixed(4)} shares
+                        </span>
                       </div>
                       <div className="font-display font-extrabold text-purple-800">
                         ${owned.currentValueUsd.toFixed(2)} value

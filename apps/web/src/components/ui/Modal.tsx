@@ -41,15 +41,15 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/50 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-ink/50 backdrop-blur-sm animate-in fade-in duration-200">
       <div
-        className="w-full max-w-md bg-cream rounded-3xl border-3 border-ink shadow-sticker-lg overflow-hidden transform transition-all p-6 relative"
+        className="w-full max-w-md bg-cream rounded-3xl border-3 border-ink shadow-sticker-lg max-h-[90vh] flex flex-col p-4 sm:p-6 relative my-auto"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
       >
-        <div className="flex items-center justify-between pb-3 border-b-2 border-slate-200 mb-4">
-          <h2 id="modal-title" className="text-xl font-bold font-display text-ink">
+        <div className="flex items-center justify-between pb-3 border-b-2 border-slate-200 mb-3 sm:mb-4 shrink-0">
+          <h2 id="modal-title" className="text-lg sm:text-xl font-bold font-display text-ink">
             {title}
           </h2>
           <button
@@ -60,7 +60,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div>{children}</div>
+        <div className="overflow-y-auto pr-1">{children}</div>
       </div>
     </div>
   );

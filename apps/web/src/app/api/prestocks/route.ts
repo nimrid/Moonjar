@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { PRESTOCKS_LIST, PRESTOCKS_API_URL } from '@moonjar/shared';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const res = await fetch(PRESTOCKS_API_URL, {

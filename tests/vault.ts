@@ -347,6 +347,7 @@ describe('Moonjar On-Chain Programs (vault & mock-swap)', () => {
         mintOut: spacexMint,
         swapProgram: mockSwapProgram.programId,
         tokenProgram: TOKEN_PROGRAM_ID,
+        tokenOutProgram: TOKEN_PROGRAM_ID,
       })
       .remainingAccounts(remainingAccounts)
       .signers([keeper])
@@ -402,6 +403,7 @@ describe('Moonjar On-Chain Programs (vault & mock-swap)', () => {
           mintOut: spacexMint,
           swapProgram: mockSwapProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
+          tokenOutProgram: TOKEN_PROGRAM_ID,
         })
         .remainingAccounts(remainingAccounts)
         .signers([keeper])
@@ -430,6 +432,7 @@ describe('Moonjar On-Chain Programs (vault & mock-swap)', () => {
           mintOut: spacexMint,
           swapProgram: mockSwapProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
+          tokenOutProgram: TOKEN_PROGRAM_ID,
         })
         .signers([impostor])
         .rpc();
@@ -477,6 +480,7 @@ describe('Moonjar On-Chain Programs (vault & mock-swap)', () => {
           mintOut: spacexMint,
           swapProgram: mockSwapProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
+          tokenOutProgram: TOKEN_PROGRAM_ID,
         })
         .remainingAccounts(remainingAccounts)
         .signers([keeper])
@@ -516,6 +520,7 @@ describe('Moonjar On-Chain Programs (vault & mock-swap)', () => {
           mintOut: spacexMint,
           swapProgram: mockSwapProgram.programId,
           tokenProgram: TOKEN_PROGRAM_ID,
+          tokenOutProgram: TOKEN_PROGRAM_ID,
         })
         .signers([keeper])
         .rpc();
@@ -534,6 +539,7 @@ describe('Moonjar On-Chain Programs (vault & mock-swap)', () => {
         vault: vaultPda,
         vaultToken: saveJarAta,
         guardianToken: guardianUsdcAta,
+        mint: usdcMint,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .signers([guardian])

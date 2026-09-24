@@ -1,16 +1,26 @@
 'use client';
 
+import { PublicKey } from '@solana/web3.js';
 import {
   ChildVaultMetadata,
   BuyDecisionLog,
   KidRequest,
-  GiftLink,
-  PreStockToken,
-  PRESTOCKS_LIST,
   BASKET_PRESETS,
-  calculatePremiumPct,
-  getPriceCheck,
 } from '@moonjar/shared';
+import { findVaultPda } from './vault-client/pda';
+
+export interface OnChainRoundupTx {
+  id: string;
+  type: 'JUPITER_DEX' | 'SPL_TRANSFER' | 'RAYDIUM_AMM' | 'DEFI_DEPOSIT';
+  protocol: string;
+  badgeColor: string;
+  icon: string;
+  description: string;
+  volumeUsd: number;
+  roundedUpUsdc: number;
+  txHash: string;
+  timestamp: string;
+}
 
 export interface VaultState {
   metadata: ChildVaultMetadata;
@@ -32,137 +42,151 @@ export interface VaultState {
   decisions: BuyDecisionLog[];
   requests: KidRequest[];
   completedLessons: string[];
+  roundupTransactions?: OnChainRoundupTx[];
 }
 
-const INITIAL_DEMO_VAULT: VaultState = {
-  metadata: {
-    vaultAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-    nickname: 'Leo The Explorer',
-    avatar: 'otter',
-    ageBand: 'little',
-    unlockDate: '2032-06-15T00:00:00.000Z',
-    guardianWallet: 'BBNyzG9Kn1xf8ZFbwK2nKr3XW4MGr4XE8pQ9iJ1rsi57',
-    capabilityToken: 'demo-token',
-    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-  },
-  saveBalanceUsdc: 185.50,
-  moonBalanceUsdc: 38.75,
-  moonCostBasisUsdc: 32.00,
-  totalDepositedUsdc: 217.50,
-  moonCapBps: 2000, // 20%
-  isPaused: false,
-  isGraduated: false,
-  matchBalanceUsdc: 15.00,
-  allocations: [
-    {
-      symbol: 'SPACEX',
-      mint: 'PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh',
-      weightBps: 4000,
-      sharesOwned: 1.5,
-      currentValueUsd: 18.15,
-    },
-    {
-      symbol: 'ANDURIL',
-      mint: 'PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB',
-      weightBps: 3500,
-      sharesOwned: 1.4,
-      currentValueUsd: 12.46,
-    },
-    {
-      symbol: 'FIGUREAI',
-      mint: 'PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd',
-      weightBps: 2500,
-      sharesOwned: 1.85,
-      currentValueUsd: 8.14,
-    },
-  ],
-  decisions: [
-    {
-      id: 'dec-101',
-      timestamp: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-      vaultAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-      symbol: 'SPACEX',
-      action: 'BUY',
-      premiumPct: 8.04,
-      amountInUsdc: 5000000,
-      amountOutTokens: 413223,
-      machineReason: 'PREMIUM_ACCEPTABLE (8.0% <= 10.0%)',
-      humanReasonKid: 'Pip found a fair price for SpaceX and added a little piece to your Moon Jar!',
-      humanReasonGuardian: 'SpaceX premium is 8.0% (<= 10% threshold). $5.00 allocated from Save Jar.',
-      txSignature: '3xNq...7wPq',
-    },
-    {
-      id: 'dec-102',
-      timestamp: new Date(Date.now() - 14 * 3600 * 1000).toISOString(),
-      vaultAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-      symbol: 'OPENAI',
-      action: 'SKIP',
-      premiumPct: 15.56,
-      machineReason: 'PREMIUM_TOO_HIGH (15.6% > 10.0%)',
-      humanReasonKid: 'OpenAI costs too much right now. Pip is being patient and keeping your coins safe!',
-      humanReasonGuardian: 'OpenAI premium is 15.6%, exceeding 10.0% safety ceiling. Purchase skipped.',
-    },
-    {
-      id: 'dec-103',
-      timestamp: new Date(Date.now() - 28 * 3600 * 1000).toISOString(),
-      vaultAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-      symbol: 'ANDURIL',
-      action: 'BUY',
-      premiumPct: 4.71,
-      amountInUsdc: 4500000,
-      amountOutTokens: 505617,
-      machineReason: 'PREMIUM_ACCEPTABLE (4.7% <= 10.0%)',
-      humanReasonKid: 'Anduril was at a great price! Pip added another slice to your Moon Jar.',
-      humanReasonGuardian: 'Anduril premium 4.7% is well under 10% cap. Executed buy for $4.50.',
-      txSignature: '4zKt...9mRt',
-    },
-  ],
-  requests: [
-    {
-      id: 'req-1',
-      vaultAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-      timestamp: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
-      type: 'ADD_MONEY',
-      amount: 10,
-      topic: 'I cleaned my room and washed the dishes!',
-      status: 'PENDING',
-    },
-    {
-      id: 'req-2',
-      vaultAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-      timestamp: new Date(Date.now() - 48 * 3600 * 1000).toISOString(),
-      type: 'LEARN',
-      topic: 'How do rockets actually land backwards?',
-      status: 'COMPLETED',
-    }
-  ],
-  completedLessons: ['what-is-money', 'two-jars'],
-};
+export const STORAGE_KEY = 'moonjar_vault_state';
 
-const STORAGE_KEY = 'moonjar_vault_state';
-
-export function getStoredVault(): VaultState {
-  if (typeof window === 'undefined') return INITIAL_DEMO_VAULT;
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    saveVault(INITIAL_DEMO_VAULT);
-    return INITIAL_DEMO_VAULT;
+/**
+ * Creates a clean default vault state with real derived PDA and empty decisions.
+ */
+export function createDefaultVaultState(guardianWallet: string, vaultAddress?: string): VaultState {
+  let addr = vaultAddress || '';
+  if (!addr && guardianWallet && guardianWallet !== 'demo-guardian') {
+    try {
+      const [pda] = findVaultPda(new PublicKey(guardianWallet), 0n);
+      addr = pda.toBase58();
+    } catch {}
   }
+
+  return {
+    metadata: {
+      vaultAddress: addr,
+      nickname: 'Child Vault',
+      avatar: 'otter',
+      ageBand: 'little',
+      unlockDate: new Date(Date.now() + 10 * 365 * 24 * 3600 * 1000).toISOString(),
+      guardianWallet,
+      capabilityToken: `token-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+    },
+    saveBalanceUsdc: 0.00,
+    moonBalanceUsdc: 0.00,
+    moonCostBasisUsdc: 0.00,
+    totalDepositedUsdc: 0.00,
+    moonCapBps: 2000, // 20%
+    isPaused: false,
+    isGraduated: false,
+    matchBalanceUsdc: 0.00,
+    allocations: BASKET_PRESETS[0].entries.map((e) => ({
+      symbol: e.symbol,
+      mint: e.mint,
+      weightBps: e.weightBps,
+      sharesOwned: 0,
+      currentValueUsd: 0,
+    })),
+    decisions: [],
+    requests: [],
+    completedLessons: [],
+    roundupTransactions: [],
+  };
+}
+
+export const CLEAN_EMPTY_VAULT: VaultState = createDefaultVaultState('demo-guardian', '');
+
+/**
+ * Retrieve stored vault for a specific guardian wallet.
+ * Strictly scoped to `moonjar_vault_state_<guardianWallet>` to prevent cross-wallet data leaks.
+ */
+export function getStoredVault(guardianWallet?: string | null): VaultState | null {
+  if (typeof window === 'undefined') return null;
+
+  // Proactively purge old unscoped global storage key to eliminate cross-wallet contamination
   try {
-    return JSON.parse(raw);
-  } catch {
-    return INITIAL_DEMO_VAULT;
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {}
+
+  if (!guardianWallet) return null;
+
+  const rawScoped = localStorage.getItem(`${STORAGE_KEY}_${guardianWallet}`);
+  if (rawScoped) {
+    try {
+      const parsed: VaultState = JSON.parse(rawScoped);
+      if (parsed && parsed.metadata?.guardianWallet === guardianWallet) {
+        // Enforce that decisions strictly match this vault address
+        if (Array.isArray(parsed.decisions)) {
+          parsed.decisions = parsed.decisions.filter(
+            (d) => d.vaultAddress === parsed.metadata.vaultAddress
+          );
+        }
+        return parsed;
+      }
+    } catch {}
   }
+
+  return null;
 }
 
+/**
+ * Retrieve existing vault or create a clean default scoped to the given guardian wallet.
+ */
+export function getOrCreateStoredVault(guardianWallet?: string | null, vaultAddress?: string): VaultState {
+  if (!guardianWallet) {
+    return CLEAN_EMPTY_VAULT;
+  }
+  const existing = getStoredVault(guardianWallet);
+  if (existing) return existing;
+  const fresh = createDefaultVaultState(guardianWallet, vaultAddress);
+  saveVault(fresh);
+  return fresh;
+}
+
+/**
+ * Save vault state strictly scoped to the guardian's wallet address.
+ */
 export function saveVault(state: VaultState): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const guardianWallet = state.metadata?.guardianWallet;
+  if (!guardianWallet || guardianWallet === 'demo-guardian') return;
+
+  // Filter decisions before persisting: strictly preserve ONLY decisions for this vault
+  const cleanedState: VaultState = {
+    ...state,
+    decisions: (state.decisions || []).filter(
+      (d) => d.vaultAddress === state.metadata.vaultAddress
+    ),
+  };
+
+  localStorage.setItem(`${STORAGE_KEY}_${guardianWallet}`, JSON.stringify(cleanedState));
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {}
 }
 
-export function resetVault(): VaultState {
+/**
+ * Purge all decision logs for a specific guardian vault.
+ */
+export function clearStoredDecisions(guardianWallet: string): void {
+  if (typeof window === 'undefined') return;
+  const current = getStoredVault(guardianWallet);
+  if (!current) return;
+  const updated: VaultState = {
+    ...current,
+    decisions: [],
+  };
+  saveVault(updated);
+}
+
+/**
+ * Reset vault state for a given guardian wallet.
+ */
+export function resetVault(guardianWallet?: string | null): void {
   if (typeof window !== 'undefined') {
-    localStorage.removeItem(STORAGE_KEY);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+    if (guardianWallet) {
+      localStorage.removeItem(`${STORAGE_KEY}_${guardianWallet}`);
+    }
   }
-  return INITIAL_DEMO_VAULT;
 }

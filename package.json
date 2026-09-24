@@ -10,6 +10,8 @@
     "start": "pnpm --parallel --filter @moonjar/web --filter @moonjar/keeper run start",
     "test": "pnpm --recursive run test",
     "test:spike": "tsx scripts/spike.ts",
+    "init-cluster": "tsx scripts/init-cluster.ts",
+    "fund": "tsx scripts/fund.ts",
     "lint": "pnpm --recursive run lint"
   },
   "devDependencies": {
