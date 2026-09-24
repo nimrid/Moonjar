@@ -19,21 +19,24 @@ import {
   Sliders, 
   Layers, 
   RefreshCw,
-  Zap
+  Zap,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 export default function RoundupsPage() {
-  const { connection, publicKey } = useGuardianWallet();
+  const { connection, publicKey, updateVaultSettings } = useGuardianWallet();
   const [vault, setVault] = useState<VaultState | null>(null);
   const [isEnabled, setIsEnabled] = useState(true);
   const [multiplier, setMultiplier] = useState<1 | 2 | 5>(1);
   const [weeklyCap, setWeeklyCap] = useState(25);
   const [isSaved, setIsSaved] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [saveSettingsError, setSaveSettingsError] = useState<string | null>(null);
+  const [saveTx, setSaveTx] = useState<string | null>(null);
   const [includeJupiter, setIncludeJupiter] = useState(true);
   const [includeSpl, setIncludeSpl] = useState(true);
   const [includeDeFi, setIncludeDeFi] = useState(true);
-  const [sweepAmountInput, setSweepAmountInput] = useState('0.75');
-  const [isSweeping, setIsSweeping] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Live on-chain wallet balance & transaction watcher
@@ -59,12 +62,34 @@ export default function RoundupsPage() {
   useEffect(() => {
     const v = getStoredVault(publicKey?.toBase58());
     setVault(v);
+    if (v?.roundupSettings) {
+      setIsEnabled(v.roundupSettings.isEnabled);
+      setMultiplier(v.roundupSettings.multiplier);
+      setWeeklyCap(v.roundupSettings.weeklyCap);
+      setIncludeJupiter(v.roundupSettings.includeJupiter);
+      setIncludeSpl(v.roundupSettings.includeSpl);
+      setIncludeDeFi(v.roundupSettings.includeDeFi);
+    } else if (v?.roundupThresholdUsdc && v.roundupThresholdUsdc > 0) {
+      setWeeklyCap(Math.round(v.roundupThresholdUsdc));
+    }
+
     if (v?.metadata?.vaultAddress) {
       fetchOnChainVaultState(v.metadata.vaultAddress).then((onChain) => {
         if (onChain) {
-          const merged = { ...v, ...onChain };
+          const merged: VaultState = { ...v, ...onChain };
           setVault(merged);
           saveVault(merged);
+
+          if (merged.roundupSettings) {
+            setIsEnabled(merged.roundupSettings.isEnabled);
+            setMultiplier(merged.roundupSettings.multiplier);
+            setWeeklyCap(merged.roundupSettings.weeklyCap);
+            setIncludeJupiter(merged.roundupSettings.includeJupiter);
+            setIncludeSpl(merged.roundupSettings.includeSpl);
+            setIncludeDeFi(merged.roundupSettings.includeDeFi);
+          } else if (onChain.roundupThresholdUsdc && onChain.roundupThresholdUsdc > 0) {
+            setWeeklyCap(Math.round(onChain.roundupThresholdUsdc));
+          }
         }
       });
     }
@@ -259,31 +284,52 @@ export default function RoundupsPage() {
     };
   }, [guardianAta, guardianAddress, isEnabled, includeSpl, connection, executeRoundupDeposit]);
 
-  const handleManualSweep = async () => {
-    const amt = parseFloat(sweepAmountInput);
-    if (isNaN(amt) || amt <= 0) return;
+  const handleSaveSettings = async () => {
+    const currentVault = vaultRef.current || getStoredVault(publicKey?.toBase58());
+    if (!currentVault?.metadata?.vaultAddress) {
+      triggerToast('⚠️ No active vault found on-chain to save rules to.');
+      return;
+    }
 
-    setIsSweeping(true);
-    const newTx: OnChainRoundupTx = {
-      id: `tx-${Date.now()}`,
-      type: 'SPL_TRANSFER',
-      protocol: 'Guardian Auto-Sweep',
-      badgeColor: 'bg-emerald-100 text-emerald-900 border-emerald-300',
-      icon: '🍯',
-      description: `Micro-sweep from Guardian wallet ($${amt.toFixed(2)})`,
-      volumeUsd: amt,
-      roundedUpUsdc: amt,
-      txHash: '',
-      timestamp: 'Just now',
-    };
+    setIsSavingSettings(true);
+    setSaveSettingsError(null);
+    setSaveTx(null);
 
-    await executeRoundupDeposit(amt, newTx);
-    setIsSweeping(false);
-  };
+    try {
+      // 1. Submit on-chain transaction calling set_caps with roundup_threshold
+      const roundupLamports = BigInt(Math.round(weeklyCap * 1_000_000));
+      const { signature } = await updateVaultSettings({
+        vaultAddress: currentVault.metadata.vaultAddress,
+        moonCapBps: currentVault.moonCapBps,
+        roundupThreshold: roundupLamports,
+      });
 
-  const handleSaveSettings = () => {
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2500);
+      // 2. Persist updated settings to local state
+      const updated: VaultState = {
+        ...currentVault,
+        roundupThresholdUsdc: weeklyCap,
+        roundupSettings: {
+          isEnabled,
+          multiplier,
+          weeklyCap,
+          includeJupiter,
+          includeSpl,
+          includeDeFi,
+        },
+      };
+
+      setVault(updated);
+      saveVault(updated);
+      setSaveTx(signature);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 5000);
+      triggerToast('🎉 On-chain round-up rules successfully saved on Solana!');
+    } catch (err: any) {
+      console.error('[RoundupsPage] Failed to save settings on-chain:', err);
+      setSaveSettingsError(err?.message || 'Transaction failed. Please ensure your guardian wallet is funded.');
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   if (!vault) {
@@ -362,7 +408,7 @@ export default function RoundupsPage() {
 
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 bg-slate-50 border-2 border-ink px-3 py-1.5 rounded-2xl shadow-sticker-sm">
-              <span className="text-xs font-bold text-slate-700">Auto Sweep:</span>
+              <span className="text-xs font-bold text-slate-700">Auto Round-ups:</span>
               <button
                 type="button"
                 aria-label="Toggle Auto Roundups"
@@ -561,55 +607,62 @@ export default function RoundupsPage() {
               </p>
             </div>
 
+            {saveSettingsError && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 text-xs font-bold flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-extrabold">Failed to save on-chain rules:</p>
+                  <p className="font-normal mt-0.5 break-all">{saveSettingsError}</p>
+                </div>
+              </div>
+            )}
+
+            {isSaved && saveTx && (
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border-2 border-emerald-300 text-emerald-900 text-xs font-bold flex items-center justify-between animate-in fade-in">
+                <div className="flex items-center gap-1.5">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>Weekly cap & rules saved on Solana!</span>
+                </div>
+                <a
+                  href={`https://explorer.solana.com/tx/${saveTx}?cluster=custom&customUrl=http%3A%2F%2F127.0.0.1%3A8899`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-emerald-700 underline hover:text-emerald-800"
+                >
+                  <span>View Tx</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            )}
+
             <Button 
               variant="primary" 
               className="w-full gap-2"
               onClick={handleSaveSettings}
+              disabled={isSavingSettings}
             >
-              {isSaved ? <Check className="w-4 h-4" /> : null}
-              {isSaved ? 'Preferences Saved!' : 'Save On-Chain Rules'}
+              {isSavingSettings ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Saving on Solana...
+                </>
+              ) : isSaved ? (
+                <>
+                  <Check className="w-4 h-4" /> Preferences Saved!
+                </>
+              ) : (
+                'Save On-Chain Rules'
+              )}
             </Button>
           </div>
         </div>
 
-        {/* Transaction Feed & Quick Sweep */}
+        {/* Transaction Feed */}
         <div className="bg-white rounded-3xl border-3 border-ink p-4 sm:p-6 shadow-sticker flex flex-col justify-between space-y-4">
           <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b-2 border-slate-100 pb-3 gap-2">
+            <div className="flex items-center justify-between border-b-2 border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <Layers className="w-5 h-5 text-indigo-600 shrink-0" />
                 <h2 className="text-lg font-display font-bold text-ink">Recent Wallet Activity</h2>
-              </div>
-
-              {/* Quick Sweep deposit */}
-              <div className="flex items-center gap-1.5">
-                <label htmlFor="sweepAmountInput" className="sr-only">Sweep amount in USDC</label>
-                <div className="relative w-24">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">$</span>
-                  <input
-                    id="sweepAmountInput"
-                    name="sweepAmountInput"
-                    type="number"
-                    step="0.25"
-                    min="0.10"
-                    aria-label="Sweep amount in USDC"
-                    value={sweepAmountInput}
-                    onChange={(e) => setSweepAmountInput(e.target.value)}
-                    className="w-full pl-5 pr-2 py-1 text-xs font-bold border-2 border-ink rounded-xl"
-                    placeholder="0.75"
-                  />
-                </div>
-                <Button 
-                  variant="secondary" 
-                  size="sm"
-                  onClick={handleManualSweep}
-                  disabled={isSweeping}
-                  className="gap-1 text-xs px-2.5 py-1"
-                  title="Sweep spare cents into Save & Moon Jars"
-                >
-                  <Coins className="w-3 h-3 text-amber-600" />
-                  {isSweeping ? 'Sweeping...' : 'Sweep Cents'}
-                </Button>
               </div>
             </div>
 
@@ -618,7 +671,7 @@ export default function RoundupsPage() {
                 <div className="text-3xl mb-2">🪙</div>
                 <h3 className="font-display font-bold text-ink text-sm">No Round-ups Swept Yet</h3>
                 <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                  When your connected wallet makes on-chain transactions or you sweep spare change, the activity will appear here.
+                  When your connected wallet makes on-chain transactions, the activity will appear here.
                 </p>
               </div>
             ) : (

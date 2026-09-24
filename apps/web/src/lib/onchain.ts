@@ -152,6 +152,8 @@ export async function fetchOnChainVaultState(
       Number(vaultAccount.totalDeposited) / Math.pow(10, USDC_DECIMALS);
     const moonCostBasis =
       Number(vaultAccount.moonCostBasis) / Math.pow(10, USDC_DECIMALS);
+    const roundupThresholdUsdc =
+      Number(vaultAccount.roundupThreshold) / Math.pow(10, USDC_DECIMALS);
 
     return {
       saveBalanceUsdc: Number(saveBalanceUsdc.toFixed(2)),
@@ -159,6 +161,7 @@ export async function fetchOnChainVaultState(
       moonCostBasisUsdc: Number(moonCostBasis.toFixed(2)),
       totalDepositedUsdc: Number(totalDeposited.toFixed(2)),
       moonCapBps: vaultAccount.moonCapBps,
+      roundupThresholdUsdc: Number(roundupThresholdUsdc.toFixed(2)),
       isPaused: vaultAccount.paused,
       isGraduated: vaultAccount.graduated,
       allocations,

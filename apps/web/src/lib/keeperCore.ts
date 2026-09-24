@@ -65,6 +65,7 @@ export async function executeKeeperCycleForVault(
   vaultAddressStr: string,
   forceBuy: boolean = false
 ): Promise<{ success: boolean; decision: BuyDecisionLog; txSignature?: string; error?: string }> {
+  let targetSymbol = 'PORTFOLIO';
   try {
     // M3: forceBuy is disallowed in production builds
     const effectiveForceBuy = forceBuy && process.env.NODE_ENV !== 'production';
@@ -202,11 +203,14 @@ export async function executeKeeperCycleForVault(
       };
     }
 
+    targetSymbol = tokenMeta.symbol;
+
     const tradeAmountUsdc = Math.min(5.0, remainingCapHeadroom, saveBalanceUsdc);
     const tradeAmountLamports = Math.floor(tradeAmountUsdc * Math.pow(10, USDC_DECIMALS));
 
-    // Fetch live Jupiter quote
-    const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${MAINNET_USDC_MINT.toBase58()}&outputMint=${candidateMint.toBase58()}&amount=${tradeAmountLamports}&slippageBps=100`;
+    // Fetch live Jupiter quote with direct routes (PDA has no intermediate token accounts)
+    // and 200 bps (2%) slippage matching the on-chain vault max_slippage_bps
+    const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${MAINNET_USDC_MINT.toBase58()}&outputMint=${candidateMint.toBase58()}&amount=${tradeAmountLamports}&onlyDirectRoutes=true&slippageBps=200`;
     const quoteRes: any = await fetchWithTimeout(quoteUrl).then((r) => r.json());
 
     if (!quoteRes || !quoteRes.outAmount) {
@@ -359,18 +363,38 @@ export async function executeKeeperCycleForVault(
     return { success: true, decision, txSignature: txSig };
   } catch (err: any) {
     console.error('[keeperCore] Error running keeper cycle:', err);
+
+    let machineReason = `ERROR: ${err.message}`;
+    let humanReasonKid = 'Pip is taking a quick rest while the computer checks the network.';
+    let humanReasonGuardian = `Keeper encountered an error: ${err.message}`;
+
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes('0x1771') || errMsg.includes('6001')) {
+      machineReason = 'JUPITER_SLIPPAGE_EXCEEDED (0x1771)';
+      humanReasonKid = `Pip tried to buy a piece of ${targetSymbol}, but the price moved before the purchase finished. Your coins are safe in your Save Jar!`;
+      humanReasonGuardian = `Jupiter swap simulation: Slippage tolerance exceeded (0x1771). Price moved beyond the allowed tolerance on DEX pools.`;
+    } else if (errMsg.includes('0x1789') || errMsg.includes('6025')) {
+      machineReason = 'JUPITER_INVALID_TOKEN_ACCOUNT (0x1789)';
+      humanReasonKid = `Pip is preparing the token safe for ${targetSymbol}. We will try again next cycle!`;
+      humanReasonGuardian = `Jupiter swap simulation: InvalidTokenAccount (0x1789). Token account configuration issue.`;
+    } else if (errMsg.includes('0x1775') || errMsg.includes('CapExceeded')) {
+      machineReason = 'MOON_CAP_EXCEEDED (0x1775)';
+      humanReasonKid = 'Your Moon Jar is cozy and full! Pip is keeping coins safe in the Save Jar.';
+      humanReasonGuardian = 'Moon Jar cost basis reached guardian cap. Further purchases blocked until cap adjusted or more funds deposited.';
+    }
+
     return {
       success: false,
       decision: {
         id: `dec-${Date.now()}`,
         timestamp: new Date().toISOString(),
         vaultAddress: vaultAddressStr,
-        symbol: 'UNKNOWN',
+        symbol: targetSymbol,
         action: 'SKIP',
         premiumPct: 0,
-        machineReason: `ERROR: ${err.message}`,
-        humanReasonKid: 'Pip is taking a quick rest while the computer checks the network.',
-        humanReasonGuardian: `Keeper encountered an error: ${err.message}`,
+        machineReason,
+        humanReasonKid,
+        humanReasonGuardian,
       },
       error: err.message,
     };

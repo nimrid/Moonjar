@@ -22,6 +22,15 @@ export interface OnChainRoundupTx {
   timestamp: string;
 }
 
+export interface RoundupSettings {
+  isEnabled: boolean;
+  multiplier: 1 | 2 | 5;
+  weeklyCap: number;
+  includeJupiter: boolean;
+  includeSpl: boolean;
+  includeDeFi: boolean;
+}
+
 export interface VaultState {
   metadata: ChildVaultMetadata;
   saveBalanceUsdc: number;
@@ -29,6 +38,7 @@ export interface VaultState {
   moonCostBasisUsdc: number;
   totalDepositedUsdc: number;
   moonCapBps: number; // 2000 = 20%
+  roundupThresholdUsdc?: number;
   isPaused: boolean;
   isGraduated: boolean;
   matchBalanceUsdc: number;
@@ -43,6 +53,7 @@ export interface VaultState {
   requests: KidRequest[];
   completedLessons: string[];
   roundupTransactions?: OnChainRoundupTx[];
+  roundupSettings?: RoundupSettings;
 }
 
 export const STORAGE_KEY = 'moonjar_vault_state';

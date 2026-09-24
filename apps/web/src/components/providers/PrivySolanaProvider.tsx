@@ -7,13 +7,16 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
   ReactNode,
 } from 'react';
 import { PrivyProvider, usePrivy } from '@privy-io/react-auth';
 import {
   useWallets,
+  useStandardWallets,
   useSignTransaction,
-  ConnectedStandardSolanaWallet,
+  useCreateWallet,
+  type ConnectedStandardSolanaWallet,
 } from '@privy-io/react-auth/solana';
 import {
   Connection,
@@ -24,6 +27,8 @@ import {
 } from '@solana/web3.js';
 import {
   TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddressSync,
   createTransferInstruction,
   createAssociatedTokenAccountIdempotentInstruction,
@@ -33,6 +38,8 @@ import { RPC_URL, MAINNET_USDC_MINT, getSolanaConnection } from '@/lib/onchain';
 import {
   createDepositInstruction,
   createCreateVaultInstruction,
+  createSetCapsInstruction,
+  createSetBasketInstruction,
   findVaultPda,
 } from '@/lib/vault-client';
 
@@ -68,6 +75,12 @@ export interface GuardianWalletContextType {
     unlockYears?: number;
     initialDepositUsdc?: number;
   }) => Promise<{ vaultAddress: string; signature: string }>;
+  updateVaultSettings: (params: {
+    vaultAddress: string;
+    moonCapBps?: number;
+    basket?: Array<{ mint: PublicKey; weightBps: number }>;
+    roundupThreshold?: bigint;
+  }) => Promise<{ signature: string }>;
   login: () => void;
   logout: () => Promise<void>;
   connection: Connection;
@@ -92,6 +105,7 @@ const GuardianWalletContext = createContext<GuardianWalletContextType>({
   transferTokens: async () => ({ signature: '' }),
   depositToVault: async () => ({ signature: '' }),
   createVault: async () => ({ vaultAddress: '', signature: '' }),
+  updateVaultSettings: async () => ({ signature: '' }),
   login: () => {},
   logout: async () => {},
   connection: getSolanaConnection(),
@@ -133,39 +147,48 @@ export const useWallet = () => {
 function GuardianWalletInner({ children }: { children: ReactNode }) {
   const { ready, authenticated, user, login: privyLogin, logout } = usePrivy();
   const { wallets } = useWallets();
+  const { wallets: standardWallets } = useStandardWallets();
+  const { createWallet: createSolanaWallet } = useCreateWallet();
   const { signTransaction: privySignTransaction } = useSignTransaction();
   const connection = useMemo(() => getSolanaConnection(), []);
 
-  // Enforce email-only login at runtime
+  // Safe login wrapper: do not call privyLogin if already authenticated
   const login = useCallback(() => {
+    if (authenticated) {
+      console.warn('[PrivySolanaProvider] User is already authenticated');
+      return;
+    }
     privyLogin({
       loginMethods: ['email'],
     });
-  }, [privyLogin]);
+  }, [authenticated, privyLogin]);
 
-  // Resolve the Solana wallet address from Privy embedded or linked accounts
+  // Resolve the Solana wallet address strictly from Solana accounts or wallets
   const solanaAddress = useMemo(() => {
     if (!user) return null;
 
-    // Check embedded or linked wallets for Solana
+    // 1. Check embedded or linked wallets strictly for Solana
     const accounts = user.linkedAccounts || [];
     const solanaWallet = accounts.find(
-      (acc: any) =>
-        acc.type === 'wallet' &&
-        (acc.chainType === 'solana' || acc.walletClientType === 'privy')
+      (acc: any) => acc.type === 'wallet' && acc.chainType === 'solana'
     ) as any;
 
     if (solanaWallet?.address) {
       return solanaWallet.address as string;
     }
 
-    // Fallback to primary wallet if present
-    if (user.wallet?.address) {
+    // 2. Fallback to standard wallets if available
+    if (wallets && wallets.length > 0 && wallets[0]?.address) {
+      return wallets[0].address;
+    }
+
+    // 3. Fallback to primary wallet only if explicitly Solana
+    if (user.wallet?.chainType === 'solana' && user.wallet?.address) {
       return user.wallet.address;
     }
 
     return null;
-  }, [user]);
+  }, [user, wallets]);
 
   const publicKey = useMemo(() => {
     if (!solanaAddress) return null;
@@ -176,15 +199,144 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
     }
   }, [solanaAddress]);
 
-  // Primary active Solana wallet from standard wallets
+  // Primary active Solana wallet from standard wallets or Privy standard wallet
   const primaryWallet = useMemo<ConnectedStandardSolanaWallet | null>(() => {
-    if (!wallets || wallets.length === 0) return null;
-    if (solanaAddress) {
-      const match = wallets.find((w) => w.address === solanaAddress);
-      if (match) return match;
+    if (wallets && wallets.length > 0) {
+      if (solanaAddress) {
+        const match = wallets.find((w) => w.address === solanaAddress);
+        if (match) return match;
+      }
+      return wallets[0];
     }
-    return wallets[0];
-  }, [wallets, solanaAddress]);
+
+    if (standardWallets && standardWallets.length > 0 && solanaAddress) {
+      const privyStandard =
+        standardWallets.find((w) => (w as any).isPrivyWallet) || standardWallets[0];
+      if (privyStandard) {
+        try {
+          const account = {
+            address: solanaAddress,
+            publicKey: new PublicKey(solanaAddress).toBytes(),
+            chains: ['solana:mainnet', 'solana:devnet'],
+            features: [
+              'solana:signTransaction',
+              'solana:signAndSendTransaction',
+              'solana:signMessage',
+            ],
+          };
+          const fallbackWallet = {
+            wallet: privyStandard,
+            account,
+            address: solanaAddress,
+            publicKey: account.publicKey,
+            chains: account.chains,
+            features: account.features,
+            signTransaction: async (args: any) => {
+              const signFn = (privyStandard.features as any)?.['solana:signTransaction']?.signTransaction;
+              if (!signFn) throw new Error('Wallet does not support solana:signTransaction');
+              const [res] = await signFn([{
+                ...args,
+                account,
+                chain: args?.chain || 'solana:mainnet',
+              }]);
+              return res;
+            },
+            signAndSendTransaction: async (args: any) => {
+              const signFn = (privyStandard.features as any)?.['solana:signAndSendTransaction']?.signAndSendTransaction;
+              if (!signFn) throw new Error('Wallet does not support solana:signAndSendTransaction');
+              const [res] = await signFn([{
+                ...args,
+                account,
+                chain: args?.chain || 'solana:mainnet',
+              }]);
+              return res;
+            },
+            signMessage: async (args: any) => {
+              const signFn = (privyStandard.features as any)?.['solana:signMessage']?.signMessage;
+              if (!signFn) throw new Error('Wallet does not support solana:signMessage');
+              const [res] = await signFn([{
+                ...args,
+                account,
+              }]);
+              return res;
+            },
+          } as unknown as ConnectedStandardSolanaWallet;
+
+          return fallbackWallet;
+        } catch (e) {
+          console.warn('[PrivySolanaProvider] Fallback ConnectedStandardSolanaWallet notice:', e);
+        }
+      }
+    }
+
+    return null;
+  }, [wallets, standardWallets, solanaAddress]);
+
+  // Auto-provision a Solana embedded wallet if user is authenticated but missing one
+  useEffect(() => {
+    let isCancelled = false;
+    if (authenticated && user) {
+      const accounts = user.linkedAccounts || [];
+      const hasSolana =
+        accounts.some((acc: any) => acc.type === 'wallet' && acc.chainType === 'solana') ||
+        (wallets && wallets.length > 0);
+
+      if (!hasSolana) {
+        createSolanaWallet()
+          .then(() => {
+            if (!isCancelled) {
+              console.log('[PrivySolanaProvider] Created Solana embedded wallet');
+            }
+          })
+          .catch((err) => {
+            console.warn('[PrivySolanaProvider] createSolanaWallet notice:', err?.message || err);
+          });
+      }
+    }
+    return () => {
+      isCancelled = true;
+    };
+  }, [authenticated, user, wallets, createSolanaWallet]);
+
+  // Stable refs for resolving active wallet without race conditions
+  const publicKeyRef = useRef(publicKey);
+  publicKeyRef.current = publicKey;
+
+  const primaryWalletRef = useRef(primaryWallet);
+  primaryWalletRef.current = primaryWallet;
+
+  const authenticatedRef = useRef(authenticated);
+  authenticatedRef.current = authenticated;
+
+  // Helper to ensure active wallet is ready before executing on-chain transactions
+  const getActiveWallet = useCallback(async (): Promise<{
+    activePublicKey: PublicKey;
+    activeWallet: ConnectedStandardSolanaWallet;
+  }> => {
+    if (!authenticatedRef.current) {
+      throw new Error('Please connect your Privy guardian wallet first.');
+    }
+
+    let pKey = publicKeyRef.current;
+    let pWal = primaryWalletRef.current;
+
+    // If authenticated but wallet is still mounting/syncing, poll briefly (up to 3.5s)
+    if (!pKey || !pWal) {
+      const startTime = Date.now();
+      while (Date.now() - startTime < 3500) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        pKey = publicKeyRef.current;
+        pWal = primaryWalletRef.current;
+        if (pKey && pWal) break;
+      }
+    }
+
+    if (!pKey || !pWal) {
+      throw new Error('Please connect your Privy guardian wallet first.');
+    }
+
+    return { activePublicKey: pKey, activeWallet: pWal };
+  }, []);
 
   // Live on-chain balances for the connected Privy wallet
   const [solBalance, setSolBalance] = useState<number>(0);
@@ -233,9 +385,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
   // Sign transaction using Privy Embedded Wallet
   const signTransaction = useCallback(
     async <T extends Transaction | VersionedTransaction>(tx: T): Promise<T> => {
-      if (!primaryWallet) {
-        throw new Error('No Privy Solana embedded wallet available to sign.');
-      }
+      const { activeWallet } = await getActiveWallet();
       const serialized = tx.serialize({
         requireAllSignatures: false,
         verifySignatures: false,
@@ -243,7 +393,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
 
       const { signedTransaction } = await privySignTransaction({
         transaction: serialized,
-        wallet: primaryWallet,
+        wallet: activeWallet,
         chain: 'solana:mainnet',
       });
 
@@ -253,7 +403,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
         return Transaction.from(signedTransaction) as unknown as T;
       }
     },
-    [primaryWallet, privySignTransaction]
+    [getActiveWallet, privySignTransaction]
   );
 
   const signAllTransactions = useCallback(
@@ -270,14 +420,12 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
   // Send transaction directly to Surfpool / Solana RPC
   const sendTransaction = useCallback(
     async (tx: Transaction, customConnection?: Connection): Promise<string> => {
-      if (!primaryWallet || !publicKey) {
-        throw new Error('Privy wallet not ready for transaction signing.');
-      }
+      const { activePublicKey } = await getActiveWallet();
       const conn = customConnection || connection;
 
       const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed');
       tx.recentBlockhash = tx.recentBlockhash || blockhash;
-      tx.feePayer = tx.feePayer || publicKey;
+      tx.feePayer = tx.feePayer || activePublicKey;
 
       const signed = await signTransaction(tx);
       const rawTx = signed.serialize();
@@ -294,7 +442,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
 
       return txSig;
     },
-    [primaryWallet, publicKey, connection, signTransaction]
+    [getActiveWallet, connection, signTransaction]
   );
 
   // Transfer tokens (USDC or SOL) directly from Privy wallet
@@ -308,9 +456,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       amount: number;
       token: 'USDC' | 'SOL';
     }): Promise<{ signature: string }> => {
-      if (!publicKey || !primaryWallet) {
-        throw new Error('Please connect your Privy guardian wallet first.');
-      }
+      const { activePublicKey } = await getActiveWallet();
       let toPubkey: PublicKey;
       try {
         toPubkey = new PublicKey(recipient.trim());
@@ -328,7 +474,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
         const lamports = Math.round(amount * 1_000_000_000);
         tx.add(
           SystemProgram.transfer({
-            fromPubkey: publicKey,
+            fromPubkey: activePublicKey,
             toPubkey,
             lamports,
           })
@@ -338,7 +484,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
         const amountUnits = Math.round(amount * 1_000_000);
         const fromAta = getAssociatedTokenAddressSync(
           MAINNET_USDC_MINT,
-          publicKey,
+          activePublicKey,
           true,
           TOKEN_PROGRAM_ID
         );
@@ -352,7 +498,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
         // Ensure recipient ATA exists idempotently
         tx.add(
           createAssociatedTokenAccountIdempotentInstruction(
-            publicKey,
+            activePublicKey,
             toAta,
             toPubkey,
             MAINNET_USDC_MINT,
@@ -365,7 +511,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
           createTransferInstruction(
             fromAta,
             toAta,
-            publicKey,
+            activePublicKey,
             amountUnits,
             [],
             TOKEN_PROGRAM_ID
@@ -377,7 +523,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       await refreshBalances();
       return { signature: txSig };
     },
-    [publicKey, primaryWallet, sendTransaction, refreshBalances]
+    [getActiveWallet, sendTransaction, refreshBalances]
   );
 
   // Deposit USDC directly into a ChildVault on-chain
@@ -389,9 +535,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       vaultAddress: string;
       amountUsdc: number;
     }): Promise<{ signature: string }> => {
-      if (!publicKey || !primaryWallet) {
-        throw new Error('Please connect your Privy guardian wallet first.');
-      }
+      const { activePublicKey } = await getActiveWallet();
       let vaultPda: PublicKey;
       try {
         vaultPda = new PublicKey(vaultAddress.trim());
@@ -406,7 +550,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       const amountLamports = Math.round(amountUsdc * 1_000_000);
       const depositorAta = getAssociatedTokenAddressSync(
         MAINNET_USDC_MINT,
-        publicKey,
+        activePublicKey,
         true,
         TOKEN_PROGRAM_ID
       );
@@ -422,15 +566,15 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       // Ensure depositor ATA exists
       tx.add(
         createAssociatedTokenAccountIdempotentInstruction(
-          publicKey,
+          activePublicKey,
           depositorAta,
-          publicKey,
+          activePublicKey,
           MAINNET_USDC_MINT,
           TOKEN_PROGRAM_ID
         ),
         // Ensure Save Jar token account exists for the vault
         createAssociatedTokenAccountIdempotentInstruction(
-          publicKey,
+          activePublicKey,
           saveJarAta,
           vaultPda,
           MAINNET_USDC_MINT,
@@ -440,7 +584,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
 
       // Create pure TransactionInstruction (zero Anchor runtime)
       const depositIx = createDepositInstruction({
-        depositor: publicKey,
+        depositor: activePublicKey,
         vault: vaultPda,
         saveJarToken: saveJarAta,
         depositorToken: depositorAta,
@@ -454,12 +598,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       await refreshBalances();
       return { signature: txSig };
     },
-    [
-      publicKey,
-      primaryWallet,
-      sendTransaction,
-      refreshBalances,
-    ]
+    [getActiveWallet, sendTransaction, refreshBalances]
   );
 
   const createVault = useCallback(
@@ -476,11 +615,9 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       unlockYears?: number;
       initialDepositUsdc?: number;
     }): Promise<{ vaultAddress: string; signature: string }> => {
-      if (!publicKey || !primaryWallet) {
-        throw new Error('Please connect your Privy guardian wallet first.');
-      }
+      const { activePublicKey } = await getActiveWallet();
       const childIndex = 0n;
-      const [vaultPda] = findVaultPda(publicKey, childIndex);
+      const [vaultPda] = findVaultPda(activePublicKey, childIndex);
 
       // Sha256 nickname hash (zero PII on-chain)
       const encoder = new TextEncoder();
@@ -498,7 +635,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       const finalBasket = basket && basket.length > 0 ? basket : defaultBasket;
 
       const createIx = createCreateVaultInstruction({
-        guardian: publicKey,
+        guardian: activePublicKey,
         childIndex,
         nicknameHash,
         unlockTs,
@@ -513,7 +650,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
         const amountLamports = Math.round(initialDepositUsdc * 1_000_000);
         const depositorAta = getAssociatedTokenAddressSync(
           MAINNET_USDC_MINT,
-          publicKey,
+          activePublicKey,
           true,
           TOKEN_PROGRAM_ID
         );
@@ -525,14 +662,14 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
         );
         tx.add(
           createAssociatedTokenAccountIdempotentInstruction(
-            publicKey,
+            activePublicKey,
             depositorAta,
-            publicKey,
+            activePublicKey,
             MAINNET_USDC_MINT,
             TOKEN_PROGRAM_ID
           ),
           createDepositInstruction({
-            depositor: publicKey,
+            depositor: activePublicKey,
             vault: vaultPda,
             saveJarToken: saveJarAta,
             depositorToken: depositorAta,
@@ -546,7 +683,77 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       await refreshBalances();
       return { vaultAddress: vaultPda.toBase58(), signature: txSig };
     },
-    [publicKey, primaryWallet, sendTransaction, refreshBalances]
+    [getActiveWallet, sendTransaction, refreshBalances]
+  );
+
+  const updateVaultSettings = useCallback(
+    async ({
+      vaultAddress,
+      moonCapBps,
+      basket,
+      roundupThreshold,
+    }: {
+      vaultAddress: string;
+      moonCapBps?: number;
+      basket?: Array<{ mint: PublicKey; weightBps: number }>;
+      roundupThreshold?: bigint;
+    }): Promise<{ signature: string }> => {
+      const { activePublicKey } = await getActiveWallet();
+      let vaultPda: PublicKey;
+      try {
+        vaultPda = new PublicKey(vaultAddress.trim());
+      } catch {
+        throw new Error(`"${vaultAddress}" is not a valid Solana vault address.`);
+      }
+
+      const tx = new Transaction();
+
+      // Ensure Moon Jar Token-2022 ATAs exist for all basket assets
+      if (basket && basket.length > 0) {
+        for (const entry of basket) {
+          const tokenAta = getAssociatedTokenAddressSync(
+            entry.mint,
+            vaultPda,
+            true,
+            TOKEN_2022_PROGRAM_ID
+          );
+          tx.add(
+            createAssociatedTokenAccountIdempotentInstruction(
+              activePublicKey,
+              tokenAta,
+              vaultPda,
+              entry.mint,
+              TOKEN_2022_PROGRAM_ID,
+              ASSOCIATED_TOKEN_PROGRAM_ID
+            )
+          );
+        }
+
+        tx.add(
+          createSetBasketInstruction({
+            guardian: activePublicKey,
+            vault: vaultPda,
+            basket,
+          })
+        );
+      }
+
+      if (moonCapBps !== undefined) {
+        tx.add(
+          createSetCapsInstruction({
+            guardian: activePublicKey,
+            vault: vaultPda,
+            moonCapBps,
+            roundupThreshold: roundupThreshold ?? 5_000_000n,
+          })
+        );
+      }
+
+      const txSig = await sendTransaction(tx);
+      await refreshBalances();
+      return { signature: txSig };
+    },
+    [getActiveWallet, sendTransaction, refreshBalances]
   );
 
   const value = useMemo<GuardianWalletContextType>(
@@ -569,6 +776,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       transferTokens,
       depositToVault,
       createVault,
+      updateVaultSettings,
       login,
       logout,
       connection,
@@ -591,6 +799,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       transferTokens,
       depositToVault,
       createVault,
+      updateVaultSettings,
       login,
       logout,
       connection,
@@ -639,7 +848,7 @@ export const PrivySolanaProvider: React.FC<{ children: ReactNode }> = ({ childre
         },
         embeddedWallets: {
           solana: {
-            createOnLogin: 'users-without-wallets',
+            createOnLogin: 'all-users',
           },
           ethereum: {
             createOnLogin: 'off',
@@ -650,9 +859,6 @@ export const PrivySolanaProvider: React.FC<{ children: ReactNode }> = ({ childre
         loginMethodsAndOrder: {
           primary: ['email'],
           overflow: [],
-        },
-        externalWallets: {
-          disableAllExternalWallets: true,
         },
       }}
     >

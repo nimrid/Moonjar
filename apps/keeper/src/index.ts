@@ -169,7 +169,7 @@ export async function evaluateOnChainVault(
 
   let quoteRes: any = null;
   try {
-    const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${MAINNET_USDC_MINT.toBase58()}&outputMint=${candidateMint.toBase58()}&amount=${tradeAmountLamports}&slippageBps=100`;
+    const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${MAINNET_USDC_MINT.toBase58()}&outputMint=${candidateMint.toBase58()}&amount=${tradeAmountLamports}&onlyDirectRoutes=true&slippageBps=200`;
     quoteRes = await fetchWithTimeout(quoteUrl).then((r) => r.json());
   } catch (err) {
     console.error(`  ❌ Failed to fetch quote from Jupiter API:`, err);

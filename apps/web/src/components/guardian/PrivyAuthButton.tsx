@@ -47,7 +47,7 @@ export const PrivyAuthButton: React.FC = () => {
     );
   }
 
-  if (!authenticated || !connected || !address) {
+  if (!authenticated) {
     return (
       <button
         onClick={login}
@@ -59,7 +59,7 @@ export const PrivyAuthButton: React.FC = () => {
     );
   }
 
-  const shortAddress = `${address.slice(0, 4)}...${address.slice(-4)}`;
+  const shortAddress = address ? `${address.slice(0, 4)}...${address.slice(-4)}` : 'Connecting...';
   const email = user?.email?.address;
   const displayName = email ? email.split('@')[0] : shortAddress;
 

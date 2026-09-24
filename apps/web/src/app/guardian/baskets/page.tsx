@@ -10,33 +10,112 @@ import { PriceTagPill } from '@/components/ui/PriceTagPill';
 import { Pip } from '@/components/mascot/Pip';
 import { useGuardianWallet } from '@/components/providers/PrivySolanaProvider';
 import { BASKET_PRESETS, getPriceCheck, calculatePremiumPct } from '@moonjar/shared';
-import { Check, AlertCircle, Save } from 'lucide-react';
+import { fetchAllOnChainVaults, fetchOnChainVaultState } from '@/lib/onchain';
+import { PublicKey } from '@solana/web3.js';
+import { Check, AlertCircle, Save, Loader2, ExternalLink } from 'lucide-react';
 
 export default function BasketsPage() {
   const [vault, setVault] = useState<VaultState | null>(null);
   const [weights, setWeights] = useState<Record<string, number>>({});
   const [capPct, setCapPct] = useState(20);
+  const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const { tokens, getToken } = usePreStocks();
-  const { publicKey } = useGuardianWallet();
+  const [saveTx, setSaveTx] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isLoadingVault, setIsLoadingVault] = useState(true);
 
+  const { tokens, getToken } = usePreStocks();
+  const { connected, authenticated, publicKey, updateVaultSettings, login } = useGuardianWallet();
+
+  // Load and sync live on-chain vault state
   useEffect(() => {
-    if (!publicKey) {
-      setVault(null);
-      return;
+    let isMounted = true;
+
+    async function loadVault() {
+      if (!publicKey) {
+        setVault(null);
+        setIsLoadingVault(false);
+        return;
+      }
+
+      setIsLoadingVault(true);
+
+      try {
+        // 1. Resolve on-chain vault address for the connected guardian
+        const all = await fetchAllOnChainVaults();
+        const myVault = all.find((v) => v.guardian === publicKey.toBase58());
+        const vaultAddress =
+          myVault?.address ||
+          getStoredVault(publicKey.toBase58())?.metadata?.vaultAddress;
+
+        if (vaultAddress) {
+          const onChain = await fetchOnChainVaultState(vaultAddress, tokens);
+          const local =
+            getStoredVault(publicKey.toBase58()) ||
+            getOrCreateStoredVault(publicKey.toBase58(), vaultAddress);
+
+          if (onChain && isMounted) {
+            const merged: VaultState = {
+              ...local,
+              ...onChain,
+              metadata: {
+                ...local.metadata,
+                vaultAddress,
+                guardianWallet: publicKey.toBase58(),
+              },
+            };
+
+            setVault(merged);
+            setCapPct(Math.round(merged.moonCapBps / 100));
+
+            const initialWeights: Record<string, number> = {};
+            tokens.forEach((p) => {
+              const match = merged.allocations.find((a) => a.symbol === p.symbol);
+              initialWeights[p.symbol] = match ? match.weightBps / 100 : 0;
+            });
+            setWeights(initialWeights);
+            saveVault(merged);
+            setIsLoadingVault(false);
+            return;
+          }
+        }
+
+        // Fallback to local stored vault if on-chain fetch is empty
+        const local = getStoredVault(publicKey.toBase58());
+        if (isMounted) {
+          setVault(local);
+          if (local) {
+            setCapPct(Math.round(local.moonCapBps / 100));
+            const initialWeights: Record<string, number> = {};
+            tokens.forEach((p) => {
+              const match = local.allocations.find((a) => a.symbol === p.symbol);
+              initialWeights[p.symbol] = match ? match.weightBps / 100 : 0;
+            });
+            setWeights(initialWeights);
+          }
+        }
+      } catch (err) {
+        console.warn('[BasketsPage] Failed to fetch live on-chain vault:', err);
+      } finally {
+        if (isMounted) setIsLoadingVault(false);
+      }
     }
-    const v = getStoredVault(publicKey.toBase58());
-    setVault(v);
-    if (v) {
-      setCapPct(v.moonCapBps / 100);
-      const initialWeights: Record<string, number> = {};
-      tokens.forEach((p) => {
-        const match = v.allocations.find((a) => a.symbol === p.symbol);
-        initialWeights[p.symbol] = match ? match.weightBps / 100 : 0;
-      });
-      setWeights(initialWeights);
-    }
+
+    loadVault();
+
+    return () => {
+      isMounted = false;
+    };
   }, [publicKey, tokens]);
+
+  if (isLoadingVault) {
+    return (
+      <div className="bg-white rounded-3xl border-3 border-ink p-8 shadow-sticker text-center max-w-xl mx-auto my-12 space-y-4">
+        <Loader2 className="w-8 h-8 animate-spin mx-auto text-amber-500" />
+        <p className="text-sm font-bold text-slate-600">Reading on-chain vault settings...</p>
+      </div>
+    );
+  }
 
   if (!vault) {
     return (
@@ -81,33 +160,70 @@ export default function BasketsPage() {
     }));
   };
 
-  const handleSave = () => {
-    if (!isValidTotal) return;
+  const handleSave = async () => {
+    if (!isValidTotal || !vault?.metadata?.vaultAddress) return;
 
-    const newAllocations = Object.entries(weights)
-      .filter(([_, w]) => w > 0)
-      .map(([sym, w]) => {
-        const item = getToken(sym);
-        const existing = vault.allocations.find((a) => a.symbol === sym);
-        return {
-          symbol: sym,
-          mint: item.contract_address,
-          weightBps: w * 100,
-          sharesOwned: existing ? existing.sharesOwned : 0,
-          currentValueUsd: existing ? existing.currentValueUsd : 0,
-        };
+    if (!authenticated) {
+      login();
+      return;
+    }
+
+    if (!connected || !publicKey) {
+      setSaveError('Guardian wallet is still initializing. Please wait a few moments.');
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+    setSaveTx(null);
+    setSavedSuccess(false);
+
+    try {
+      const basketEntries: Array<{ mint: PublicKey; weightBps: number }> = [];
+      const newAllocations = Object.entries(weights)
+        .filter(([_, w]) => w > 0)
+        .map(([sym, w]) => {
+          const item = getToken(sym);
+          const existing = vault.allocations.find((a) => a.symbol === sym);
+          const weightBps = Math.round(w * 100);
+          basketEntries.push({
+            mint: new PublicKey(item.contract_address),
+            weightBps,
+          });
+          return {
+            symbol: sym,
+            mint: item.contract_address,
+            weightBps,
+            sharesOwned: existing ? existing.sharesOwned : 0,
+            currentValueUsd: existing ? existing.currentValueUsd : 0,
+          };
+        });
+
+      // 1. Submit on-chain transaction calling set_basket and set_caps
+      const { signature } = await updateVaultSettings({
+        vaultAddress: vault.metadata.vaultAddress,
+        moonCapBps: capPct * 100,
+        basket: basketEntries,
       });
 
-    const updated: VaultState = {
-      ...vault,
-      moonCapBps: capPct * 100,
-      allocations: newAllocations,
-    };
+      // 2. Update local state
+      const updated: VaultState = {
+        ...vault,
+        moonCapBps: capPct * 100,
+        allocations: newAllocations,
+      };
 
-    setVault(updated);
-    saveVault(updated);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+      setVault(updated);
+      saveVault(updated);
+      setSaveTx(signature);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 5000);
+    } catch (err: any) {
+      console.error('[BasketsPage] Failed to save basket on-chain:', err);
+      setSaveError(err?.message || 'Transaction failed. Please ensure your guardian wallet is funded.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -115,9 +231,39 @@ export default function BasketsPage() {
       <div className="bg-white p-4 sm:p-6 rounded-3xl border-3 border-ink shadow-sticker">
         <h1 className="text-xl sm:text-2xl font-black font-display text-ink">Baskets & Safety Caps</h1>
         <p className="text-xs sm:text-sm text-slate-600 mt-1">
-          Customize which PreStocks {vault.metadata.nickname}'s Moon Jar can buy, and set the strict overall portfolio cap.
+          Customize which PreStocks {vault.metadata.nickname}&apos;s Moon Jar can buy, and set the strict overall portfolio cap.
         </p>
       </div>
+
+      {saveError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 flex items-start gap-2.5 text-xs font-bold">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-extrabold">Failed to update settings on-chain:</p>
+            <p className="font-normal mt-0.5 break-all">{saveError}</p>
+          </div>
+        </div>
+      )}
+
+      {savedSuccess && (
+        <div className="p-4 rounded-2xl bg-emerald-50 border-2 border-emerald-300 text-emerald-900 flex items-center justify-between text-xs font-bold animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600" />
+            <span>Successfully updated basket and safety cap on Solana!</span>
+          </div>
+          {saveTx && (
+            <a
+              href={`https://explorer.solana.com/tx/${saveTx}?cluster=custom&customUrl=http%3A%2F%2F127.0.0.1%3A8899`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-emerald-700 underline hover:text-emerald-800"
+            >
+              <span>View Tx</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+      )}
 
       {/* Cap Configuration */}
       <div className="bg-white p-4 sm:p-6 rounded-3xl border-3 border-ink shadow-sticker space-y-4">
@@ -232,13 +378,25 @@ export default function BasketsPage() {
           <Button
             variant="primary"
             size="md"
-            disabled={!isValidTotal}
-            onClick={handleSave}
+            disabled={!isValidTotal || isSaving || (authenticated && !connected)}
+            onClick={!authenticated ? login : handleSave}
             className="flex items-center gap-2"
           >
-            {savedSuccess ? (
+            {isSaving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Saving on Solana...
+              </>
+            ) : savedSuccess ? (
               <>
                 <Check className="w-4 h-4" /> Changes Saved!
+              </>
+            ) : !authenticated ? (
+              <>
+                <span>🍯</span> Connect Guardian Wallet to Save
+              </>
+            ) : !connected ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Initializing Wallet...
               </>
             ) : (
               <>

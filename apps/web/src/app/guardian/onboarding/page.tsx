@@ -22,7 +22,7 @@ const AVATARS: { id: AnimalAvatar; name: string; emoji: string }[] = [
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { publicKey, connected, login, createVault } = useGuardianWallet();
+  const { publicKey, connected, authenticated, login, createVault } = useGuardianWallet();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -46,8 +46,13 @@ export default function OnboardingPage() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const handleFinish = async () => {
-    if (!connected || !publicKey) {
+    if (!authenticated) {
       login();
+      return;
+    }
+
+    if (!connected || !publicKey) {
+      setCreateError('Guardian wallet is still initializing. Please wait a few moments.');
       return;
     }
 
@@ -413,12 +418,21 @@ export default function OnboardingPage() {
                 variant="leaf"
                 className="w-full sm:flex-1 text-sm sm:text-base flex items-center justify-center gap-2"
                 onClick={handleFinish}
-                disabled={isCreating}
+                disabled={isCreating || (authenticated && !connected)}
               >
                 {isCreating ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     Deploying On-Chain Vault...
+                  </>
+                ) : !authenticated ? (
+                  <>
+                    <span>🍯</span> Connect Guardian Wallet First
+                  </>
+                ) : !connected ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Initializing Wallet...
                   </>
                 ) : (
                   'Deploy & Activate Vault 🎉'
