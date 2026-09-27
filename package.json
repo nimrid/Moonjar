@@ -2,6 +2,7 @@
   "name": "moonjar-monorepo",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "build": "pnpm --recursive run build",
     "dev": "pnpm --parallel --filter @moonjar/web --filter @moonjar/keeper run dev",

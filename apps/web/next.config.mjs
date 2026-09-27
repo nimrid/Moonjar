@@ -12,12 +12,14 @@ const nextConfig = {
       '@farcaster/mini-app-solana': false,
       '@abstract-foundation/agw-client': false,
       permissionless: false,
+      '@solana-program/memo': false,
     };
     config.resolve.alias = {
       ...config.resolve.alias,
       '@farcaster/mini-app-solana': false,
       '@abstract-foundation/agw-client': false,
       permissionless: false,
+      '@solana-program/memo': false,
     };
     config.externals.push('pino-pretty', 'lokijs', 'encoding');
     return config;
