@@ -7,7 +7,7 @@ use anchor_spl::associated_token::AssociatedToken;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 use anchor_spl::token_interface::{self, Mint as InterfaceMint, TokenAccount as InterfaceTokenAccount, TokenInterface};
 
-declare_id!("hVSAPTYZCboWUcmzGcAJkC8jLSWcmJ4VtBjNpW4DmWT");
+declare_id!("8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno");
 
 pub const MAX_ALLOWED_MINTS: usize = 12;
 pub const MAX_BASKET_LEN: usize = 8;

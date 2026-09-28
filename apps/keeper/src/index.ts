@@ -43,7 +43,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, ms = 10_
 
 const MAINNET_USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 const RPC_URL = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
-const PROGRAM_ID = new PublicKey('hVSAPTYZCboWUcmzGcAJkC8jLSWcmJ4VtBjNpW4DmWT');
+const PROGRAM_ID = new PublicKey(process.env.VAULT_PROGRAM_ID || '8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno');
 
 let liveTokens: PreStockToken[] = PRESTOCKS_LIST;
 

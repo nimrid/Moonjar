@@ -11,8 +11,12 @@ import * as path from 'path';
 import vaultIdl from '../target/idl/vault.json';
 
 const RPC_URL = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
-const PROGRAM_ID = new PublicKey('hVSAPTYZCboWUcmzGcAJkC8jLSWcmJ4VtBjNpW4DmWT');
+const PROGRAM_ID = new PublicKey(process.env.VAULT_PROGRAM_ID || '8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno');
 const MAINNET_USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+const DEVNET_USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
+const USDC_MINT = process.env.USDC_MINT
+  ? new PublicKey(process.env.USDC_MINT)
+  : (RPC_URL.includes('devnet') ? DEVNET_USDC_MINT : MAINNET_USDC_MINT);
 
 const ALLOWED_MINTS = [
   new PublicKey('PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh'), // SpaceX
@@ -48,7 +52,7 @@ async function main() {
 
   const [configPda] = PublicKey.findProgramAddressSync([Buffer.from('config')], PROGRAM_ID);
   const [matchPoolPda] = PublicKey.findProgramAddressSync([Buffer.from('match_pool')], PROGRAM_ID);
-  const matchPoolTokenAta = getAssociatedTokenAddressSync(MAINNET_USDC_MINT, matchPoolPda, true);
+  const matchPoolTokenAta = getAssociatedTokenAddressSync(USDC_MINT, matchPoolPda, true);
 
   console.log(`Config PDA:     ${configPda.toBase58()}`);
   console.log(`Match Pool PDA: ${matchPoolPda.toBase58()}`);
@@ -73,7 +77,7 @@ async function main() {
       config: configPda,
       matchPool: matchPoolPda,
       matchPoolToken: matchPoolTokenAta,
-      usdcMint: MAINNET_USDC_MINT,
+      usdcMint: USDC_MINT,
       systemProgram: SystemProgram.programId,
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,

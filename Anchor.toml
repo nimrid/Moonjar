@@ -5,20 +5,19 @@ anchor_version = "1.2.0"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-vault = "hVSAPTYZCboWUcmzGcAJkC8jLSWcmJ4VtBjNpW4DmWT"
-mock_swap = "6JBe6PqaEGGWgmcSiCMptyLvhekA8uyuvKNXuwNZktsJ"
-
 [programs.devnet]
-vault = "hVSAPTYZCboWUcmzGcAJkC8jLSWcmJ4VtBjNpW4DmWT"
-mock_swap = "6JBe6PqaEGGWgmcSiCMptyLvhekA8uyuvKNXuwNZktsJ"
+mock_swap = "C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE"
+vault = "8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno"
 
-[registry]
-url = "https://api.apr.dev"
+[programs.localnet]
+mock_swap = "C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE"
+vault = "8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno"
 
 [provider]
-cluster = "Localnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "pnpm exec ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[hooks]

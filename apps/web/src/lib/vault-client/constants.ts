@@ -1,11 +1,14 @@
 import { PublicKey } from '@solana/web3.js';
 
 export const PROGRAM_ID = new PublicKey(
-  'hVSAPTYZCboWUcmzGcAJkC8jLSWcmJ4VtBjNpW4DmWT'
+  process.env.NEXT_PUBLIC_VAULT_PROGRAM_ID || '8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno'
 );
 
 export const MAINNET_USDC_MINT = new PublicKey(
-  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+  process.env.NEXT_PUBLIC_USDC_MINT ||
+  (process.env.NEXT_PUBLIC_SOLANA_NETWORK === 'devnet'
+    ? '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
+    : 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
 );
 
 export const MAX_BASKET_LEN = 8;
