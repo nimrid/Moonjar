@@ -1,6 +1,7 @@
 # 🍯 Moonjar
 
-> **A family savings app for kids, powered by PreStocks on Solana.**
+> **Autonomous Pre-IPO Savings Vault on Solana for the Next Generation.**
+> A calm, educational family savings application powered by Token-2022 PreStocks, Privy embedded wallets, and an autonomous fiduciary valuation keeper.
 
 [![Solana](https://img.shields.io/badge/Solana-Mainnet_Fork_(Surfpool)-14F195?logo=solana&logoColor=white)](https://solana.com)
 [![Privy Embedded Wallets](https://img.shields.io/badge/Privy-Embedded_Wallets-512DA8)](https://privy.io)
@@ -11,52 +12,89 @@
 
 ---
 
-## What is Moonjar?
+## 📖 Table of Contents
 
-Moonjar teaches children responsible, patient wealth-building by separating savings into two distinct on-chain jars:
-
-1. **The Save Jar**: Safe, stable digital dollars (USDC). Always accessible, earning steady yield, and never exposed to market volatility.
-2. **The Moon Jar**: Hard-capped (default 20%, maximum 50% on-chain) exposure to tokenized private equity pioneers (SpaceX, OpenAI, Anthropic, Anduril, Figure AI, etc.) via **PreStocks**.
-
-Moonjar is engineered around **calm psychology**:
-- **No red numbers** for drawdowns.
-- **Snapshot from earlier today**: Daily snapshots instead of live tickers to prevent screen addiction and dopamine spikes.
-- **Cost-basis tracking**: The 20% cap measures cost basis deposited, not unrealized paper gains — meaning a 10x run-up in SpaceX never triggers an automated forced sale.
-- **Autonomous Valuation Guard**: Algorithmic keeper rejects secondary market purchases whenever secondary DEX pricing exceeds primary round valuation by > 10% ("Too pricey").
+1. [Overview & Philosophy](#-overview--philosophy)
+2. [Dual Jar Mechanism](#-dual-jar-mechanism)
+3. [System Architecture](#-system-architecture)
+4. [Monorepo Structure](#-monorepo-structure)
+5. [Prerequisites](#-prerequisites)
+6. [Quickstart: Setup & Running Locally](#-quickstart-setup--running-locally)
+7. [Core Safety Invariants](#-core-safety-invariants)
+8. [Available Apps & Portals](#-available-apps--portals)
+9. [Development & Testing Commands](#-development--testing-commands)
+10. [Environment Variables Reference](#-environment-variables-reference)
+11. [License](#-license)
 
 ---
 
-## System Architecture
+## 🌟 Overview & Philosophy
+
+Traditional fintech apps expose children to speculative gamification, volatile price charts, and high dopamine triggers. **Moonjar** takes a fundamentally different path built on **calm psychology**:
+
+- **No red numbers**: Price dips are not displayed as flashing alarming red numbers; child savings are framed as long-term wealth building.
+- **Daily snapshots**: Replaces live ticking charts with calm daily snapshot checks to prevent screen addiction.
+- **Cost-basis tracking**: The Moon Jar cap (default 20%, maximum 50%) is mathematically calculated against *deposited cost basis*, not paper gains. A 10x rise in SpaceX never triggers an automated forced sale.
+- **Autonomous Valuation Guard**: The fiduciary Keeper engine refuses secondary market DEX buys whenever price exceeds fundamental primary valuation by $> 10\%$ ("Too pricey").
+- **COPPA Compliant & Zero Seed Phrases**: Parents authenticate seamlessly via Privy embedded wallets (email/social). Kids access their view via a private capability URL (`/k/[token]`) with zero keys or signing capabilities.
+
+---
+
+## 🍯 Dual Jar Mechanism
+
+```
+               ┌───────────────────────────────┐
+               │    Total Savings Inflow       │
+               │   (Allowance, Gifts, Roundups)│
+               └───────────────┬───────────────┘
+                               │
+            ┌──────────────────┴──────────────────┐
+            ▼                                     ▼
+ ┌──────────────────────┐              ┌──────────────────────┐
+ │    🍯 Save Jar       │              │    🚀 Moon Jar       │
+ │                      │              │                      │
+ │ • 100% Circle USDC   │              │ • Tokenized Pre-IPO  │
+ │ • Zero volatility    │              │   Equities (SpaceX,  │
+ │ • Liquid & redeemable│              │   OpenAI, Anduril)   │
+ │ • Default 80% alloc  │              │ • Hard 20% cost cap  │
+ └──────────────────────┘              └──────────────────────┘
+```
+
+1. **The Save Jar**: Bedrock capital held in safe digital dollars (USDC). Always accessible, independent guardian withdrawal rights, and shielded from volatility.
+2. **The Moon Jar**: Hard-capped exposure to private market pioneers via PreStocks Token-2022 assets. Purchases are executed autonomously in micro-batches by the Keeper engine when valuations are fair.
+
+---
+
+## 🏗️ System Architecture
 
 ```mermaid
 flowchart TD
-    subgraph ChildExperience ["Child Experience (/k/[token])"]
+    subgraph ChildExperience ["Child Experience (/k/[token] & /k/demo)"]
         KidApp["Kid Web App (No Seed Phrases, Animal Avatars)"]
-        DualJars["Tactile Jars (Save Jar + Moon Jar)"]
+        DualJars["Tactile Dual Jars (Save + Moon)"]
         Pip["Pip Mascot (5 Emotional States)"]
-        Garden["Compound Interest Garden"]
-        Academy["Pip's Money Academy (6 Quizzes)"]
-        Ask["Curated Request Chips"]
+        Garden["Compound Interest Flower Garden"]
+        Academy["Pip's Money Academy (Quizzes & Badges)"]
+        Ask["Curated Request Messenger"]
     end
 
     subgraph GuardianExperience ["Guardian Suite (/guardian)"]
         PrivyAuth["Privy Embedded Solana Wallet"]
-        GNav["Guardian Navigation"]
-        GBaskets["Basket Presets & Allocation Sliders"]
-        GDecisions["Keeper Valuation Decision Log & Clear Log"]
-        GGifts["Shareable Gift Links + QR Codes"]
+        GNav["Guardian Navigation (Switch to Kid View)"]
+        GBaskets["PreStock Baskets & Cap Sliders"]
+        GDecisions["Keeper Valuation Decision Log"]
         GRoundups["Spare Change Round-ups Simulator"]
-        TransferModal["Wallet Transfer & Direct Save Jar Deposit"]
+        TransferModal["USDC / SOL Wallet Transfer & Deposit"]
     end
 
     subgraph KeeperEngine ["Autonomous Keeper Engine (@moonjar/keeper)"]
-        PricePoller["Live PreStocks Registry & Jupiter V6 Quotes"]
-        ValuationEngine["Valuation Delta Check (10% Safety Ceiling)"]
+        PricePoller["PreStocks Mark Price & Jupiter V6 Quotes"]
+        ValuationEngine["Valuation Delta Check (10% Premium Cap)"]
         CapGuard["Cost-Basis Cap Invariant Evaluator"]
-        VersionedTx["Versioned Transaction V0 + Address Lookup Tables"]
+        VersionedTx["Versioned Tx V0 + Address Lookup Tables"]
     end
 
-    subgraph SolanaOnChain ["Solana Program (Anchor + Token-2022)"]
+    subgraph SolanaOnChain ["Solana Program (Anchor 0.30 + Token-2022)"]
         ConfigPDA["Global Config PDA (Keeper Auth, Allowed Mints)"]
         VaultPDA["Child Vault PDA (USDC & PreStock Holdings)"]
         CapInvariant["Hard Cost-Basis Cap Invariant (<= 50%)"]
@@ -77,79 +115,104 @@ flowchart TD
 
 ---
 
-## Repository Structure
+## 📁 Monorepo Structure
 
 ```
-moonjar/
+MoonJar/
 ├── apps/
-│   ├── web/             # Next.js 14 App: Privy embedded wallets, Pattern 2 pure client (89.8 kB bundle)
-│   └── keeper/          # Autonomous TypeScript Keeper daemon (Versioned V0 swaps, 10% premium ceiling)
+│   ├── web/             # Next.js 14 Web App: Guardian Suite, Child Portal, Pattern 2 pure Web3 client
+│   └── keeper/          # Autonomous TypeScript Keeper bot: Versioned V0 swaps, 10% premium ceiling
 ├── packages/
-│   └── shared/          # Shared schemas (Zod), PreStocks registry, Flesch-Kincaid & banned-word linters
+│   └── shared/          # Shared Zod schemas, PreStocks registry, Flesch-Kincaid & banned-word linters
 ├── programs/
 │   ├── vault/           # Anchor program: ChildVault PDA, cost-basis caps, match pool, Jupiter CPI
-│   └── mock-swap/       # Offline CPI test harness for CI unit testing
-├── runbooks/            # Surfpool infrastructure-as-code runbooks (instant cheatcode deployments)
+│   └── mock-swap/       # Offline CPI test harness for deterministic Anchor unit tests
+├── runbooks/            # Surfpool infrastructure-as-code runbooks (instant program deployment)
 ├── scripts/
-│   ├── fund.ts          # Instant SOL airdrop & USDC provisioning via Surfpool cheatcodes
+│   ├── fund.ts          # Instant SOL airdrop & USDC balance provisioning via Surfpool cheatcodes
 │   ├── init-cluster.ts  # Global on-chain config initialization (Keeper authority & allowed mints)
-│   └── spike.ts         # Milestone 1 feasibility validation against live PreStocks registry
+│   └── spike.ts         # PreStocks registry and pricing validation probe
 ├── tests/               # Anchor on-chain test suite (13 integration tests & Jupiter CPI suite)
-├── ASSUMPTIONS.md       # Architectural decisions & documented mock boundaries
-├── DEMO_SCRIPT.md       # Step-by-step interactive showcase tour
-└── README.md            # Monorepo overview and quickstart guide
+├── Anchor.toml          # Anchor program deployment & cluster settings
+└── package.json         # Workspace root configuration (pnpm 9)
 ```
 
 ---
 
-## Getting Started
+## 🧰 Prerequisites
 
-### Prerequisites
-- Node.js >= 18.18.0
-- pnpm >= 9.0.0
-- [Surfpool](https://surfpool.run) (`curl -sL https://run.surfpool.run/ | bash`)
-- Solana CLI & Rust (for on-chain smart contract development)
+Ensure you have the following installed on your machine:
+
+- **Node.js**: `>= 18.18.0` (LTS recommended)
+- **pnpm**: `>= 9.0.0` (`npm install -g pnpm`)
+- **Surfpool**: Local Solana developer environment & mainnet fork tool
+  ```bash
+  curl -sL https://run.surfpool.run/ | bash
+  ```
+- **Rust & Solana CLI** *(optional, only required if modifying on-chain Rust programs)*:
+  - Rust 1.75+
+  - Solana CLI 1.18+
+  - Anchor CLI 0.30+
 
 ---
 
-### 1. Installation
+## 🚀 Quickstart: Setup & Running Locally
+
+Follow these step-by-step instructions to get the complete Moonjar monorepo running locally.
+
+### 1. Clone & Install Dependencies
 
 ```bash
 git clone https://github.com/moonjar/moonjar.git
-cd moonjar
+cd MoonJar
 pnpm install
 ```
 
----
+### 2. Configure Environment Variables
 
-### 2. Start the Local Surfpool Cluster
+Copy or verify `.env` at the root and `apps/web/.env.local`:
 
-In a separate terminal, launch your local Surfpool cluster (forking Solana mainnet on-demand):
+```bash
+# Verify root .env exists
+cat .env
+```
+
+Ensure your `.env` contains:
+```env
+NEXT_PUBLIC_PRIVY_APP_ID=cmudhs25n004d0bl62a2o8z2j
+PRIVY_APP_ID=cmudhs25n004d0bl62a2o8z2j
+NEXT_PUBLIC_SOLANA_NETWORK=mainnet-beta
+NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8899
+NEXT_PUBLIC_VAULT_PROGRAM_ID=8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno
+```
+
+### 3. Start the Local Surfpool Cluster
+
+In a separate terminal window, start the Surfpool cluster (forks Solana mainnet accounts on-demand):
 
 ```bash
 surfpool start --no-tui -y
 ```
 
-Deploy the on-chain programs to Surfpool:
+### 4. Deploy On-Chain Programs
+
+In your main terminal, execute the deployment runbook to deploy `vault` and `mock_swap` to your Surfpool cluster:
+
 ```bash
 surfpool run deployment -u --env localnet
 ```
 
----
+### 5. Initialize the Global On-Chain Config
 
-### 3. Initialize On-Chain Global Config
-
-Initialize the on-chain `config` account with the keeper authority, Circle USDC mint, and allowed PreStocks mints:
+Register the keeper authority and allowed PreStocks mints on-chain:
 
 ```bash
 pnpm init-cluster
 ```
 
----
+### 6. Fund a Guardian Wallet (SOL + USDC)
 
-### 4. Fund Your Guardian Wallet
-
-Fund any Solana wallet (including your Privy embedded wallet) with 5 SOL for gas and test USDC:
+Airdrop 5 SOL for transaction fees and provision test USDC to any Solana wallet (e.g. your Privy embedded wallet address):
 
 ```bash
 pnpm fund <SOLANA_WALLET_ADDRESS> [USDC_AMOUNT]
@@ -158,93 +221,99 @@ pnpm fund <SOLANA_WALLET_ADDRESS> [USDC_AMOUNT]
 pnpm fund BBNyzG9Kn1xf8ZFbwK2nKr3XW4MGr4XE8pQ9iJ1rsi57 500
 ```
 
----
-
-### 5. Launch the Web App & Keeper Daemon
+### 7. Run the Web App & Keeper Daemon
 
 Run both services concurrently:
+
 ```bash
 pnpm dev
 ```
 
-Or run each service individually:
+Or run them individually:
+
 ```bash
-# Next.js Web App (http://localhost:3000)
+# Run Next.js Web App on http://localhost:3000
 pnpm dev:web
 
-# Autonomous Valuation Keeper Service
+# Run Autonomous Keeper bot in background
 pnpm dev:keeper
 
-# One-shot keeper evaluation scan
+# Run a single one-shot scan of the Keeper
 npx tsx apps/keeper/src/index.ts --once
 ```
 
----
-
-## Core Invariants & Safety Invariants
-
-### 1. Cost-Basis Moon Cap
-- Enforced on-chain via basis points (`moon_cap_bps`).
-- Default: `2000` (20%). Hard ceiling: `5000` (50%).
-- Verified mathematically before every buy instruction:
-  $$\text{new\_moon\_cost} = \text{moon\_cost\_basis} + \text{amount\_in} \le \frac{\text{total\_deposited} \times \text{moon\_cap\_bps}}{10000}$$
-- **Market run-ups never force sales**: Unrealized gains do not increase the cost basis.
-
-### 2. Valuation Protection (The 10% Safety Rule)
-- Queries live Jupiter secondary quotes and calculates effective price per share.
-- Compares against fundamental mark price from the PreStocks API.
-- If $\text{premium} > 10.0\%$, the keeper automatically rejects the trade (`PREMIUM_TOO_HIGH` / "Too pricey").
-- Funds remain 100% safe in USDC in the Save Jar.
-
-### 3. Versioned Transactions & Address Lookup Tables (ALTs)
-- Jupiter DLMM/AMM swaps frequently require 30+ accounts, which exceeds Solana's legacy 1,232-byte transaction MTU limit.
-- Moonjar encodes all keeper purchases as **Versioned Transactions (v0)** with Address Lookup Tables, shrinking transactions from **1,658 bytes down to 510 bytes**.
-- Injects `ComputeBudgetProgram.setComputeUnitLimit({ units: 800_000 })` to support complex multi-hop swaps.
-
-### 4. Guardian Pause & Independent Withdrawal Rights
-- Freezing buys and deposits does **NOT** block withdrawals.
-- Guardians retain self-custody rights to withdraw Save Jar USDC or close positions at any time.
-
-### 5. Strict Wallet & Vault Data Isolation
-- Browser storage is strictly keyed to `moonjar_vault_state_<guardianWallet>`.
-- The global un-scoped key is proactively purged on load.
-- Decisions are strictly filtered by `d.vaultAddress === vault.metadata.vaultAddress` to guarantee zero cross-wallet leaks.
-
-### 6. COPPA Privacy Invariants
-- Zero private keys or signing capabilities on the child device.
-- Zero third-party trackers, analytics, or external CDN assets.
-- Child nicknames are hashed on-chain (`[u8; 32]`); avatars are friendly animals.
-- Curated request chips prevent open-ended chat risks.
+Open [http://localhost:3000](http://localhost:3000) to see Moonjar in action!
 
 ---
 
-## Design System
+## 🔒 Core Safety Invariants
 
-- **Palette**: Paper (`#FAF8F5`), Ink (`#1F1B2E`), Buttercup (`#FFE853`), Lilac (`#A084E8`), Mint (`#38D39F`), Sky (`#70D6FF`), Coral (`#FF6584`).
-- **Typography**: Self-hosted Atkinson Hyperlegible, Fredoka, and Nunito.
-- **Sticker Aesthetic**: 3px solid ink borders, `4px 4px 0 #1F1B2E` offset drop shadows, tactile rounded pill buttons.
-- **Pip the Mascot**: Custom responsive SVG otter mascot with 5 emotional states (`happy`, `curious`, `thinking`, `calm-reassuring`, `cheering`).
+| Invariant | Implementation | Guarantee |
+| :--- | :--- | :--- |
+| **Cost-Basis Cap** | On-chain Anchor check (`moon_cap_bps`) | Hard limit (default 20%, max 50%). Run-ups in stock prices never trigger forced liquidation. |
+| **Valuation Protection** | Keeper 10% premium ceiling vs PreStocks API | Trades are aborted (`PREMIUM_TOO_HIGH` / "Too pricey") if secondary DEX prices exceed primary valuation by > 10%. |
+| **Zero MTU Overflows** | Versioned Transactions (v0) + ALTs | Multi-account Jupiter swaps compressed from 1,658 bytes down to 510 bytes (under Solana's 1,232-byte MTU limit). |
+| **Guardian Autonomy** | Independent withdrawal instruction | Pausing automatic buys never blocks parents from withdrawing USDC or redeeming holdings. |
+| **Data Isolation** | Scoped `localStorage` keys | Strict per-wallet storage keys (`moonjar_vault_state_<wallet>`) eliminate cross-wallet contamination. |
+| **COPPA Protection** | Zero seed phrases, private capability links | No keys or private credentials on child devices; zero trackers, ads, or open-ended chats. |
 
 ---
 
-## Testing & Quality Assurance
+## 📱 Available Apps & Portals
+
+### 1. Guardian Suite (`/guardian`)
+- **Dashboard (`/guardian/dashboard`)**: Vault overview, dual jar liquid gauges, asset allocations, quick deposits, and live keeper action feeds.
+- **Onboarding (`/guardian/onboarding`)**: 3-step setup (child name, avatar, COPPA consent, on-chain vault initialization).
+- **PreStocks Baskets (`/guardian/baskets`)**: Allocation weight sliders across SpaceX, OpenAI, Anthropic, Anduril, Figure AI, and risk cap sliders.
+- **Decision Engine Log (`/guardian/decisions`)**: Complete transparent audit log of algorithmic buy and skip decisions.
+- **Round-ups Simulator (`/guardian/roundups`)**: Spare change debit transaction simulator with 1x, 2x, 5x multipliers and weekly caps.
+- **Wallet Transfer Modal**: Fast transfers of USDC and SOL directly between external wallets and the child's Save Jar.
+
+### 2. Child Experience (`/k/[token]` and `/k/demo`)
+- **Jars Overview (`/k/[token]`)**: Tactile Save Jar and Moon Jar with bouncy coin animations and responsive Pip expressions.
+- **Instant Preview (`/k/demo`)**: Instant live demonstration for visitors without requiring wallet setup.
+- **Inside Moon Jar (`/k/[token]/moon`)**: Portfolio holdings with company logos and Pip's Money Academy quizzes with digital badges.
+- **Company Stories (`/k/[token]/company/[symbol]`)**: Kid-friendly deep dives into SpaceX, OpenAI, and Anduril with dual reading level toggles (*Little Explorer* vs *Future Founder*).
+- **Compound Garden (`/k/[token]/garden`)**: Interactive flower garden showing how compound interest grows money over 1 to 8 years.
+
+---
+
+## 🧪 Development & Testing Commands
 
 ```bash
-# Run shared package unit tests (Zod schemas, copy linters, Flesch-Kincaid):
+# Run unit tests in shared package (Zod schemas, linters, Flesch-Kincaid):
 pnpm --filter @moonjar/shared test
 
-# Run Anchor on-chain test suite:
+# Run Anchor on-chain smart contract tests:
 anchor test
 
-# Run Next.js production build verification:
+# Build production bundle for Next.js web app:
 pnpm --filter @moonjar/web build
 
-# Run TypeScript typechecks across all workspaces:
+# Run TypeScript typechecks across all monorepo workspaces:
 pnpm --recursive run build
+
+# Run linting across all workspaces:
+pnpm lint
 ```
 
 ---
 
-## License
+## ⚙️ Environment Variables Reference
+
+| Variable | Scope | Description |
+| :--- | :--- | :--- |
+| `NEXT_PUBLIC_PRIVY_APP_ID` | Web App | Privy App ID for embedded Solana wallet authentication |
+| `PRIVY_APP_SECRET` | Web / API | Privy App Secret for backend authentication verification |
+| `NEXT_PUBLIC_RPC_URL` | Web App | Solana RPC URL (defaults to `http://127.0.0.1:8899` for Surfpool) |
+| `NEXT_PUBLIC_SOLANA_NETWORK` | Web App | Solana cluster target (`mainnet-beta`, `devnet`, or `localnet`) |
+| `NEXT_PUBLIC_VAULT_PROGRAM_ID` | Web / Scripts | On-chain Anchor program ID for the ChildVault program |
+| `SOLANA_RPC_URL` | Keeper / Scripts | RPC endpoint for the Keeper bot and cluster scripts |
+| `KEEPER_KEYPAIR_PATH` | Keeper | Path to keeper authority Solana keypair (`~/.config/solana/id.json`) |
+| `FORCE_BUY` | Keeper | Set to `true` to bypass the 10% premium check during test scenarios |
+
+---
+
+## 📄 License
 
 MIT © Moonjar Contributors
