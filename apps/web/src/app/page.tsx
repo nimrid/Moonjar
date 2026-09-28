@@ -8,14 +8,14 @@ import { Button } from '@/components/ui/Button';
 import { Shield, Sparkles, Heart, Rocket } from 'lucide-react';
 
 export default function HomePage() {
-  const [kidLink, setKidLink] = useState<string>('/guardian/onboarding');
+  const [kidLink, setKidLink] = useState<string>('/k/demo');
 
   useEffect(() => {
     const vault = getStoredVault();
     if (vault?.metadata?.capabilityToken) {
       setKidLink(`/k/${vault.metadata.capabilityToken}`);
     } else {
-      setKidLink('/guardian/onboarding');
+      setKidLink('/k/demo');
     }
   }, []);
 

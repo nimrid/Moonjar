@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getStoredVault, saveVault, VaultState } from '@/lib/store';
+import { getStoredVaultByToken, saveVault, VaultState, DEMO_VAULT } from '@/lib/store';
 import { usePreStocks } from '@/lib/usePreStocks';
 import { Pip } from '@/components/mascot/Pip';
 import { Button } from '@/components/ui/Button';
@@ -21,13 +21,13 @@ import { fetchOnChainVaultState } from '@/lib/onchain';
 
 export default function MoonJarPage({ params }: { params: { token: string } }) {
   const token = params.token;
-  const [vault, setVault] = useState<VaultState | null>(null);
+  const [vault, setVault] = useState<VaultState | null>(() => getStoredVaultByToken(token));
   const { tokens } = usePreStocks();
 
   useEffect(() => {
-    const v = getStoredVault();
+    const v = getStoredVaultByToken(token);
     setVault(v);
-    if (v?.metadata?.vaultAddress) {
+    if (v?.metadata?.vaultAddress && v.metadata.vaultAddress !== DEMO_VAULT.metadata.vaultAddress) {
       fetchOnChainVaultState(v.metadata.vaultAddress, tokens).then((onChain) => {
         if (onChain) {
           const updated = { ...v, ...onChain };
@@ -36,7 +36,7 @@ export default function MoonJarPage({ params }: { params: { token: string } }) {
         }
       });
     }
-  }, [tokens]);
+  }, [tokens, token]);
 
   if (!vault) {
     return (

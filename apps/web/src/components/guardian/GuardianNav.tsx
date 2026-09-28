@@ -23,17 +23,18 @@ import { WalletTransferModal } from '@/components/guardian/WalletTransferModal';
 export const GuardianNav: React.FC = () => {
   const pathname = usePathname();
   const { connected, publicKey } = useGuardianWallet();
-  const [kidLink, setKidLink] = useState<string>('/guardian/onboarding');
+  const [kidLink, setKidLink] = useState<string>('/k/demo');
   const [isTransferOpen, setIsTransferOpen] = useState(false);
 
   useEffect(() => {
-    const vault = getStoredVault();
+    const walletAddress = publicKey ? publicKey.toBase58() : undefined;
+    const vault = getStoredVault(walletAddress);
     if (vault?.metadata?.capabilityToken) {
       setKidLink(`/k/${vault.metadata.capabilityToken}`);
     } else {
-      setKidLink('/guardian/onboarding');
+      setKidLink('/k/demo');
     }
-  }, []);
+  }, [publicKey, connected]);
 
   const links = [
     { href: '/guardian/dashboard', label: 'Vault Cockpit', icon: LayoutDashboard },

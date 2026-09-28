@@ -103,39 +103,173 @@ export function createDefaultVaultState(guardianWallet: string, vaultAddress?: s
   };
 }
 
+export const DEMO_VAULT: VaultState = {
+  metadata: {
+    vaultAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+    nickname: 'Leo The Explorer',
+    avatar: 'otter',
+    ageBand: 'little',
+    unlockDate: '2032-06-15T00:00:00.000Z',
+    guardianWallet: 'demo-guardian',
+    capabilityToken: 'demo',
+    createdAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
+  },
+  saveBalanceUsdc: 185.5,
+  moonBalanceUsdc: 38.75,
+  moonCostBasisUsdc: 32.0,
+  totalDepositedUsdc: 217.5,
+  moonCapBps: 2000, // 20%
+  isPaused: false,
+  isGraduated: false,
+  matchBalanceUsdc: 15.0,
+  allocations: [
+    {
+      symbol: 'SPACEX',
+      mint: 'PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh',
+      weightBps: 4000,
+      sharesOwned: 1.5,
+      currentValueUsd: 18.15,
+    },
+    {
+      symbol: 'ANDURIL',
+      mint: 'PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB',
+      weightBps: 3500,
+      sharesOwned: 1.4,
+      currentValueUsd: 12.46,
+    },
+    {
+      symbol: 'FIGUREAI',
+      mint: 'PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd',
+      weightBps: 2500,
+      sharesOwned: 1.85,
+      currentValueUsd: 8.14,
+    },
+  ],
+  decisions: [
+    {
+      id: 'dec-101',
+      timestamp: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+      vaultAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+      symbol: 'SPACEX',
+      action: 'BUY',
+      premiumPct: 8.04,
+      amountInUsdc: 5000000,
+      amountOutTokens: 413223,
+      machineReason: 'PREMIUM_ACCEPTABLE (8.0% <= 10.0%)',
+      humanReasonKid: 'Pip found a fair price for SpaceX and added a little piece to your Moon Jar!',
+      humanReasonGuardian: 'SpaceX premium is 8.0% (<= 10% threshold). $5.00 allocated from Save Jar.',
+      txSignature: '3xNq...7wPq',
+    },
+  ],
+  requests: [
+    {
+      id: 'req-1',
+      vaultAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+      timestamp: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
+      type: 'ADD_MONEY',
+      amount: 10,
+      topic: 'I cleaned my room and washed the dishes!',
+      status: 'PENDING',
+    },
+  ],
+  completedLessons: ['what-is-money', 'two-jars'],
+  roundupTransactions: [],
+};
+
 export const CLEAN_EMPTY_VAULT: VaultState = createDefaultVaultState('demo-guardian', '');
 
 /**
- * Retrieve stored vault for a specific guardian wallet.
- * Strictly scoped to `moonjar_vault_state_<guardianWallet>` to prevent cross-wallet data leaks.
+ * Retrieve stored vault for a specific guardian wallet or scan active vaults.
+ * If guardianWallet is provided, strictly matches that wallet.
+ * If omitted, checks for the last active guardian wallet or any stored vault.
  */
 export function getStoredVault(guardianWallet?: string | null): VaultState | null {
   if (typeof window === 'undefined') return null;
 
-  // Proactively purge old unscoped global storage key to eliminate cross-wallet contamination
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {}
-
-  if (!guardianWallet) return null;
-
-  const rawScoped = localStorage.getItem(`${STORAGE_KEY}_${guardianWallet}`);
-  if (rawScoped) {
-    try {
-      const parsed: VaultState = JSON.parse(rawScoped);
-      if (parsed && parsed.metadata?.guardianWallet === guardianWallet) {
-        // Enforce that decisions strictly match this vault address
-        if (Array.isArray(parsed.decisions)) {
-          parsed.decisions = parsed.decisions.filter(
-            (d) => d.vaultAddress === parsed.metadata.vaultAddress
-          );
+  // 1. If a specific wallet is passed, retrieve its scoped state
+  if (guardianWallet) {
+    const rawScoped = localStorage.getItem(`${STORAGE_KEY}_${guardianWallet}`);
+    if (rawScoped) {
+      try {
+        const parsed: VaultState = JSON.parse(rawScoped);
+        if (parsed && parsed.metadata?.guardianWallet === guardianWallet) {
+          if (Array.isArray(parsed.decisions)) {
+            parsed.decisions = parsed.decisions.filter(
+              (d) => d.vaultAddress === parsed.metadata.vaultAddress
+            );
+          }
+          return parsed;
         }
-        return parsed;
+      } catch {}
+    }
+    return null;
+  }
+
+  // 2. If no wallet is passed, try retrieving the last active guardian wallet
+  const lastWallet = localStorage.getItem('moonjar_last_guardian_wallet');
+  if (lastWallet) {
+    const raw = localStorage.getItem(`${STORAGE_KEY}_${lastWallet}`);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.metadata) return parsed;
+      } catch {}
+    }
+  }
+
+  // 3. Fallback: scan any localStorage key matching `${STORAGE_KEY}_`
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith(`${STORAGE_KEY}_`)) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed?.metadata) return parsed;
+        } catch {}
       }
-    } catch {}
+    }
   }
 
   return null;
+}
+
+/**
+ * Retrieve a stored vault by its capabilityToken, or fallback to DEMO_VAULT.
+ */
+export function getStoredVaultByToken(token?: string | null): VaultState {
+  if (typeof window === 'undefined') return DEMO_VAULT;
+  if (!token || token === 'demo' || token === 'demo-token') {
+    const active = getStoredVault();
+    return active || DEMO_VAULT;
+  }
+
+  // 1. Check if token maps directly to a known guardian wallet
+  const mappedWallet = localStorage.getItem(`moonjar_vault_token_${token}`);
+  if (mappedWallet) {
+    const v = getStoredVault(mappedWallet);
+    if (v) return v;
+  }
+
+  // 2. Scan all stored vaults in localStorage
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith(`${STORAGE_KEY}_`)) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed: VaultState = JSON.parse(raw);
+          if (parsed.metadata?.capabilityToken === token) {
+            return parsed;
+          }
+        } catch {}
+      }
+    }
+  }
+
+  // 3. Fallback to any existing vault, or DEMO_VAULT
+  const fallback = getStoredVault();
+  return fallback || DEMO_VAULT;
 }
 
 /**
@@ -143,7 +277,9 @@ export function getStoredVault(guardianWallet?: string | null): VaultState | nul
  */
 export function getOrCreateStoredVault(guardianWallet?: string | null, vaultAddress?: string): VaultState {
   if (!guardianWallet) {
-    return CLEAN_EMPTY_VAULT;
+    const anyStored = getStoredVault();
+    if (anyStored) return anyStored;
+    return DEMO_VAULT;
   }
   const existing = getStoredVault(guardianWallet);
   if (existing) return existing;
@@ -169,6 +305,10 @@ export function saveVault(state: VaultState): void {
   };
 
   localStorage.setItem(`${STORAGE_KEY}_${guardianWallet}`, JSON.stringify(cleanedState));
+  if (state.metadata?.capabilityToken) {
+    localStorage.setItem(`moonjar_vault_token_${state.metadata.capabilityToken}`, guardianWallet);
+  }
+  localStorage.setItem('moonjar_last_guardian_wallet', guardianWallet);
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {}

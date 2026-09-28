@@ -56,7 +56,7 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState(false);
 
-  const vault = getStoredVault();
+  const vault = getStoredVault(address);
   const vaultAddress = vault?.metadata?.vaultAddress;
   const childNickname = vault?.metadata?.nickname || 'Child';
 

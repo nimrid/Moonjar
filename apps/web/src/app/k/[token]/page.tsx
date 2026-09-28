@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getOrCreateStoredVault, saveVault, VaultState } from '@/lib/store';
+import { getStoredVaultByToken, saveVault, VaultState, DEMO_VAULT } from '@/lib/store';
 import { JarCard } from '@/components/ui/JarCard';
 import { Pip } from '@/components/mascot/Pip';
 import { Button } from '@/components/ui/Button';
@@ -34,16 +34,16 @@ import { fetchOnChainVaultState } from '@/lib/onchain';
 
 export default function KidHomePage({ params }: { params: { token: string } }) {
   const token = params.token;
-  const [vault, setVault] = useState<VaultState>(getOrCreateStoredVault());
+  const [vault, setVault] = useState<VaultState>(() => getStoredVaultByToken(token));
   const [pipMood, setPipMood] = useState<'happy' | 'cheering' | 'curious'>('happy');
   const [pipMessage, setPipMessage] = useState(
     "Welcome back! Your jars are safe and snug. Tap a jar to see the coins bounce!"
   );
 
   useEffect(() => {
-    const v = getOrCreateStoredVault();
+    const v = getStoredVaultByToken(token);
     setVault(v);
-    if (v?.metadata?.vaultAddress) {
+    if (v?.metadata?.vaultAddress && v.metadata.vaultAddress !== DEMO_VAULT.metadata.vaultAddress) {
       fetchOnChainVaultState(v.metadata.vaultAddress).then((onChain) => {
         if (onChain) {
           const updated = { ...v, ...onChain };
@@ -52,7 +52,7 @@ export default function KidHomePage({ params }: { params: { token: string } }) {
         }
       });
     }
-  }, []);
+  }, [token]);
 
   const handleTapSaveJar = () => {
     setPipMood('cheering');

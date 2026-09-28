@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { getStoredVault, VaultState } from '@/lib/store';
+import { getStoredVaultByToken, VaultState } from '@/lib/store';
 import { 
   Sparkles, 
   Home, 
@@ -26,11 +26,11 @@ export default function KidLayout({
 }) {
   const pathname = usePathname();
   const token = params.token;
-  const [vault, setVault] = useState<VaultState | null>(null);
+  const [vault, setVault] = useState<VaultState | null>(() => getStoredVaultByToken(token));
 
   useEffect(() => {
-    setVault(getStoredVault());
-  }, []);
+    setVault(getStoredVaultByToken(token));
+  }, [token]);
 
   const avatarEmoji: Record<string, string> = {
     otter: '🦦',
