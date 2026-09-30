@@ -10,7 +10,7 @@ import {
   VaultState,
 } from '@/lib/store';
 import { usePreStocks } from '@/lib/usePreStocks';
-import { fetchOnChainVaultState, fetchAllOnChainVaults } from '@/lib/onchain';
+import { fetchOnChainVaultState, fetchAllOnChainVaults, getNetworkLabel } from '@/lib/onchain';
 import { DecisionLogItem } from '@/components/ui/DecisionLogItem';
 import { Button } from '@/components/ui/Button';
 import { Pip } from '@/components/mascot/Pip';
@@ -210,7 +210,7 @@ export default function DecisionsPage() {
         decisions: [newLog, ...cleanExistingDecisions],
       };
 
-      // Resync on-chain balances if on Surfpool
+      // Resync on-chain balances after keeper evaluation
       try {
         const onChain = await fetchOnChainVaultState(vault.metadata.vaultAddress, tokens);
         if (onChain) {
@@ -337,7 +337,7 @@ export default function DecisionsPage() {
               size="sm"
               onClick={() => handleEvaluateLivePreStocks(true)}
               disabled={isEvaluating}
-              title="Force execute Jupiter swap on Surfpool"
+              title={`Force execute Jupiter buy on ${getNetworkLabel()} bypassing premium check`}
               className="gap-1.5 text-xs py-2 bg-purple-700 hover:bg-purple-800 text-white"
             >
               <Zap className="w-3.5 h-3.5" />

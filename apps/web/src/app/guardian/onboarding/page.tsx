@@ -8,6 +8,7 @@ import { Slider } from '@/components/ui/Slider';
 import { Pip } from '@/components/mascot/Pip';
 import { BASKET_PRESETS, AnimalAvatar, AgeBand } from '@moonjar/shared';
 import { saveVault, VaultState } from '@/lib/store';
+import { RPC_URL, getNetworkLabel } from '@/lib/onchain';
 import { PublicKey } from '@solana/web3.js';
 import { ShieldCheck, ArrowRight, Lock, Check, Loader2, AlertCircle } from 'lucide-react';
 
@@ -399,7 +400,11 @@ export default function OnboardingPage() {
                   <div className="font-bold">Deployment Notice:</div>
                   <div className="mt-0.5">{createError}</div>
                   <div className="mt-1 text-xs text-red-600">
-                    Tip: If running on local Surfpool, run <code className="bg-red-100 px-1 py-0.5 rounded font-mono">pnpm fund {publicKey?.toBase58().slice(0, 8)}... 500</code> in terminal to fund your wallet with SOL and USDC.
+                    {(RPC_URL.includes('127.0.0.1') || RPC_URL.includes('localhost')) ? (
+                      <>Tip: On Surfpool (localnet), run <code className="bg-red-100 px-1 py-0.5 rounded font-mono">pnpm fund {publicKey?.toBase58().slice(0, 8)}... 500</code> in terminal to fund your wallet with SOL and USDC.</>
+                    ) : (
+                      <>Tip: On {getNetworkLabel()}, get devnet USDC from the <a href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer" className="underline font-semibold">Circle faucet</a> and SOL from <code className="bg-red-100 px-1 py-0.5 rounded font-mono">solana airdrop 2</code>.</>
+                    )}
                   </div>
                 </div>
               </div>

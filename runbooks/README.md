@@ -1,117 +1,98 @@
 # 🚀 MoonJar Surfpool Runbooks
 
-> Declarative Crypto Infrastructure as Code (IaC) for local development, instant cheatcode program deployments, and on-demand Solana mainnet forking.
+> Infrastructure-as-Code for instant on-demand Solana program deployment to a local mainnet fork.
 
 [![Surfpool](https://img.shields.io/badge/Operated%20with-Surfpool-green?logo=solana&logoColor=white)](https://surfpool.run)
 
 ---
 
-## 📖 Table of Contents
+## What Surfpool Does for Moonjar
 
-1. [Overview](#-overview)
-2. [Program IDs & Artifacts](#-program-ids--artifacts)
-3. [Deployment Runbook (`deployment/main.tx`)](#-deployment-runbook-deploymentmaintx)
-4. [Step-by-Step Setup Guide](#-step-by-step-setup-guide)
-5. [Useful Surfpool Commands](#-useful-surfpool-commands)
-6. [Why Surfpool for MoonJar?](#-why-surfpool-for-moonjar)
+Surfpool runs a local Solana node at `http://127.0.0.1:8899` that **forks Solana mainnet on demand**. When the keeper or web app requests mainnet accounts (Jupiter program, PreStock mint accounts, AMM pool state), Surfpool fetches them live from mainnet and caches them locally. This lets you:
 
----
+- Run real Jupiter V6 swap quotes and execute CPI swaps against real liquidity
+- Use the real Circle USDC mint (`EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`)
+- Use real PreStock Token-2022 mints (SpaceX, OpenAI, etc.)
+- Provision test balances instantly via cheatcodes (no faucet needed)
 
-## 🛠️ Overview
-
-Moonjar relies on **Surfpool** to automate program compilation, deployment, and test account provisioning. Surfpool forks Solana mainnet on-demand, caching mainnet Token-2022 mints and liquidity pools locally so that integration tests run against realistic blockchain state without incurring real gas costs.
+All without spending real money or needing a mainnet wallet with funds.
 
 ---
 
-## 📦 Program IDs & Artifacts
+## Programs Deployed
 
-The current Anchor programs configured in `Anchor.toml` and deployed by the runbook:
+The deployment runbook deploys **both** programs to the local fork:
 
-| Program | Program ID | Description |
-| :--- | :--- | :--- |
-| **`vault`** | `8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno` | Core MoonJar child vault program (PDA accounts, cost-basis invariants, Jupiter CPI) |
-| **`mock_swap`** | `C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE` | Offline swap test harness for deterministic unit tests |
+| Program | Program ID |
+| :--- | :--- |
+| `vault` | `8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno` |
+| `mock_swap` | `C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE` |
 
----
-
-## 📄 Deployment Runbook (`deployment/main.tx`)
-
-Located at [`runbooks/deployment/main.tx`](file:///Users/hng/Documents/antigravity/MoonJar/runbooks/deployment/main.tx):
-
-```hcl
-addon "svm" {
-    rpc_api_url = input.rpc_api_url
-    network_id = input.network_id
-}
-
-action "deploy_mock_swap" "svm::deploy_program" {
-    description = "Deploy mock_swap program"
-    program = svm::get_program_from_anchor_project("mock_swap") 
-    authority = signer.authority
-    payer = signer.payer
-    instant_surfnet_deployment = true
-}
-
-action "deploy_vault" "svm::deploy_program" {
-    description = "Deploy vault program"
-    program = svm::get_program_from_anchor_project("vault") 
-    authority = signer.authority
-    payer = signer.payer
-    instant_surfnet_deployment = true
-}
-```
-
-Both actions use `instant_surfnet_deployment = true` to write program bytecode directly to the cluster accounts via Surfpool cheatcodes, completing deployments in milliseconds.
+`mock_swap` is deployed as part of the runbook but is **only ever called** from `tests/vault.ts`. The keeper and web app exclusively use Jupiter.
 
 ---
 
-## 🚀 Step-by-Step Setup Guide
+## Step-by-Step Usage
 
-### 1. Launch the Local Surfpool Cluster
-In a dedicated terminal window:
+### 1. Start Surfpool cluster (keep this terminal open)
+
 ```bash
 surfpool start --no-tui -y
 ```
 
-### 2. Deploy Anchor Programs via Runbook
+This starts the local Solana fork at `http://127.0.0.1:8899`. Keep it running in its own terminal throughout development.
+
+### 2. Deploy programs
+
 ```bash
 surfpool run deployment -u --env localnet
 ```
 
-### 3. Initialize Global On-Chain Config
-Register the keeper authority and allowed PreStocks mints on-chain:
+Uses `instant_surfnet_deployment = true` in the runbook — writes program bytecode directly via cheatcode. Completes in milliseconds.
+
+### 3. Initialise on-chain Config PDA
+
+Only needed once (or after resetting the ledger):
+
 ```bash
 pnpm init-cluster
 ```
 
-### 4. Fund Any Wallet with SOL & USDC
-Airdrop 5 SOL and set test USDC token balance via Surfpool cheatcodes:
+This sets up the keeper authority and registers the 7 allowed PreStock mints in the vault program's Config account.
+
+### 4. Fund any wallet
+
 ```bash
-pnpm fund <SOLANA_WALLET_ADDRESS> [USDC_AMOUNT]
+pnpm fund <WALLET_ADDRESS> [USDC_AMOUNT]
 
 # Example:
 pnpm fund BBNyzG9Kn1xf8ZFbwK2nKr3XW4MGr4XE8pQ9iJ1rsi57 500
 ```
 
+- Airdrops 5 SOL via `requestAirdrop`
+- Sets USDC token account balance via `surfnet_setTokenAccount` cheatcode
+
+> This script only works against Surfpool localnet. It does not work on devnet or mainnet.
+
 ---
 
-## ⌨️ Useful Surfpool Commands
+## Runbook Syntax Reference
 
 ```bash
-# List available runbooks:
+# List all available runbooks:
 surfpool ls
 
-# Execute deployment on localnet:
+# Execute deployment on localnet (with latest compiled artifacts):
 surfpool run deployment -u --env localnet
 
-# Watch mode (automatically redeploys upon recompilation):
+# Watch mode — auto-redeploys when program .so files change:
 surfpool start --watch
 ```
 
 ---
 
-## 💡 Why Surfpool for MoonJar?
+## Why Not Use anchor deploy for Local Development?
 
-1. **On-Demand Mainnet Forking**: MoonJar's Keeper interacts with real live Jupiter V6 swap aggregators, Meteora DLMM pools, and Token-2022 PreStocks mints. Surfpool fetches and caches mainnet accounts on-demand, allowing end-to-end integration testing without paying real mainnet gas.
-2. **Deterministic Infrastructure as Code**: Runbooks eliminate fragile bash deployment scripts, ensuring reproducible environments across all developer machines and CI runners.
-3. **Cheatcode State Provisioning**: `surfnet_setTokenAccount` allows instant provisioning of any token balance without manual faucet rate limits.
+`anchor deploy` sends real transactions to upload program data. For large programs this is slow and requires significant SOL for rent. Surfpool's `instant_surfnet_deployment = true` bypasses this by writing bytecode directly to the cluster state — making redeploys instant during development.
+
+For **devnet** deployment, use `anchor deploy --provider.cluster devnet` instead (see the root README).

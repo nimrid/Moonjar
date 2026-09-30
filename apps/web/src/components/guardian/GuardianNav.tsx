@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useGuardianWallet } from '@/components/providers/PrivySolanaProvider';
 import { PrivyAuthButton } from '@/components/guardian/PrivyAuthButton';
 import { getStoredVault } from '@/lib/store';
+import { getNetworkLabel } from '@/lib/onchain';
 import { 
   LayoutDashboard, 
   PieChart, 
@@ -63,7 +64,7 @@ export const GuardianNav: React.FC = () => {
                 type="button"
                 onClick={() => setIsTransferOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 border-ink bg-emerald-100 hover:bg-emerald-200 text-xs font-bold text-emerald-950 shadow-sticker-sm transition-transform active:scale-95"
-                title="Transfer USDC or SOL on Surfpool"
+                title={`Transfer USDC or SOL on ${getNetworkLabel()}`}
               >
                 <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-700" />
                 <span className="hidden sm:inline">Transfer</span>

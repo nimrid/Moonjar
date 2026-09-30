@@ -5,6 +5,7 @@ import { useGuardianWallet } from '@/components/providers/PrivySolanaProvider';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { getStoredVault } from '@/lib/store';
+import { RPC_URL, getNetworkLabel } from '@/lib/onchain';
 import confetti from 'canvas-confetti';
 import {
   ArrowRightLeft,
@@ -76,6 +77,9 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
     setTimeout(() => setCopiedAddr(false), 2000);
   };
 
+  const isLocalnet = RPC_URL.includes('127.0.0.1') || RPC_URL.includes('localhost');
+  const networkLabel = getNetworkLabel();
+
   const fundCommand = `pnpm fund ${address || '<YOUR_WALLET_ADDRESS>'} 500`;
 
   const handleCopyCmd = () => {
@@ -124,7 +128,7 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
           throw new Error('No active vault address found. Please onboard a child vault first.');
         }
 
-        setStatusMessage('2/2 Depositing USDC on-chain to Save Jar (Surfpool)...');
+        setStatusMessage(`2/2 Depositing USDC on-chain to Save Jar (${networkLabel})...`);
         try {
           const res = await depositToVault({
             vaultAddress,
@@ -162,7 +166,7 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
           throw new Error('Please specify a recipient Solana address.');
         }
 
-        setStatusMessage(`2/2 Broadcasting ${tokenType} transfer to Surfpool...`);
+        setStatusMessage(`2/2 Broadcasting ${tokenType} transfer to ${networkLabel}...`);
         const res = await transferTokens({
           recipient: customRecipient.trim(),
           amount: numAmount,
@@ -173,7 +177,7 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
 
       setTxSignature(signature);
       setStatus('success');
-      setStatusMessage('Transfer successfully confirmed on Surfpool!');
+      setStatusMessage(`Transfer successfully confirmed on ${networkLabel}!`);
 
       try {
         confetti({
@@ -201,7 +205,7 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
           </div>
           <h3 className="text-lg font-bold font-display text-ink">Guardian Wallet Required</h3>
           <p className="text-xs text-slate-600 max-w-xs mx-auto">
-            Please log in with your Privy Guardian embedded wallet to make on-chain transfers on Surfpool.
+            Please log in with your Privy Guardian embedded wallet to make on-chain transfers on {networkLabel}.
           </p>
           <Button
             variant="primary"
@@ -269,11 +273,11 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
         </div>
 
         {/* CLI Funding Hint if balance is low */}
-        {usdcBalance === 0 && (
+        {usdcBalance === 0 && isLocalnet && (
           <div className="p-2.5 bg-sky-50 rounded-xl border-2 border-sky-300 text-xs space-y-1.5">
             <div className="flex items-center gap-1.5 font-bold text-sky-900 font-display">
               <Terminal className="w-3.5 h-3.5 text-sky-700" />
-              Need USDC or SOL on Surfpool?
+              Need USDC or SOL on Surfpool (localnet)?
             </div>
             <div className="flex items-center justify-between bg-white px-2 py-1 rounded-lg border border-sky-200 font-mono text-[11px] text-slate-700">
               <span className="truncate">{fundCommand}</span>
@@ -285,6 +289,26 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
                 {copiedCmd ? 'Copied' : 'Copy'}
               </button>
             </div>
+          </div>
+        )}
+
+        {usdcBalance === 0 && !isLocalnet && (
+          <div className="p-2.5 bg-sky-50 rounded-xl border-2 border-sky-300 text-xs space-y-1.5">
+            <div className="flex items-center gap-1.5 font-bold text-sky-900 font-display">
+              <Terminal className="w-3.5 h-3.5 text-sky-700" />
+              Need devnet USDC?
+            </div>
+            <p className="text-slate-600">
+              Get free devnet USDC from the{' '}
+              <a
+                href="https://faucet.circle.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline text-sky-700 font-semibold"
+              >
+                Circle faucet
+              </a>.
+            </p>
           </div>
         )}
 
@@ -418,7 +442,7 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
           <div className="p-3 bg-emerald-50 rounded-xl border-2 border-emerald-400 text-xs space-y-1">
             <div className="flex items-center gap-1.5 font-extrabold text-emerald-900 font-display text-sm">
               <Check className="w-4 h-4 text-emerald-600" />
-              Transfer Confirmed on Surfpool!
+              Transfer Confirmed on {networkLabel}!
             </div>
             {txSignature && (
               <p className="font-mono text-[11px] text-emerald-800 break-all pt-0.5">

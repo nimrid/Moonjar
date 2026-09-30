@@ -1,136 +1,103 @@
-# 🌙 Moonjar Autonomous Keeper Service (`@moonjar/keeper`)
+# 🌙 Moonjar Keeper Service (`@moonjar/keeper`)
 
-> An autonomous agentic fiduciary daemon that monitors on-chain child savings vaults, enforces mathematical safety caps, evaluates secondary DEX market valuations against fundamental PreStocks mark prices, and executes disciplined micro-purchases via Jupiter V6 on Solana.
-
----
-
-## 📖 Table of Contents
-
-1. [Overview](#-overview)
-2. [5-Stage Fiduciary Evaluation Pipeline](#-5-stage-fiduciary-evaluation-pipeline)
-3. [The 10% Valuation Safety Rule](#-the-10-valuation-safety-rule)
-4. [Versioned Transactions (v0) & Address Lookup Tables](#-versioned-transactions-v0--address-lookup-tables)
-5. [Configuration & Environment Variables](#-configuration--environment-variables)
-6. [Usage & Commands](#-usage--commands)
-7. [Supported PreStocks Token-2022 Mints](#-supported-prestocks-token-2022-mints)
-8. [Decision Log Format](#-decision-log-format)
+> Autonomous fiduciary daemon that scans on-chain ChildVault accounts, evaluates live PreStock valuations against Jupiter secondary market quotes, and executes DCA micro-purchases when conditions pass all safety checks.
 
 ---
 
-## 🤖 Overview
-
-The Moonjar Keeper acts as an autonomous fiduciary for every registered `ChildVault`. Running as a persistent background daemon or triggered on demand, it scans on-chain vaults and determines whether secondary market conditions warrant allocating Save Jar USDC into Moon Jar assets.
-
----
-
-## 🔍 5-Stage Fiduciary Evaluation Pipeline
-
-```mermaid
-flowchart TD
-    A["1. Vault Status Guard"] -->|Active| B["2. Cost-Basis Cap Check"]
-    A -->|Paused or Graduated| Skip1["SKIP: VAULT_PAUSED / GRADUATED"]
-    B -->|Headroom > $1.00| C["3. Liquid Cash Check"]
-    B -->|Headroom <= $0| Skip2["SKIP: COST_BASIS_CAP_EXCEEDED"]
-    C -->|Save Jar >= $1.00| D["4. Valuation & Premium Guard"]
-    C -->|Save Jar < $1.00| Skip3["SKIP: INSUFFICIENT_CASH"]
-    D -->|Premium <= 10.0%| E["5. Versioned V0 Jupiter Swap CPI"]
-    D -->|Premium > 10.0% & !force| Skip4["SKIP: PREMIUM_TOO_HIGH (Too Pricey)"]
-    D -->|--force-buy Flag| E
-    E --> F["Post-CPI Invariant & Balance Verification"]
-```
-
-### Detailed Evaluation Steps:
-1. **Vault Status Guard**: Halts immediately if the guardian paused the vault (`isPaused`) or if the child has reached graduation age.
-2. **Cost-Basis Cap Headroom Check**: Enforces `(totalDeposited * moonCapBps / 10000) - moonCostBasis > 0`. If the Moon Jar cost basis has reached the guardian's ceiling (e.g. 20%), the keeper refuses further allocation.
-3. **Disciplined Micro-Batch Sizing**: Slices trade amount to:
-   $$\text{tradeAmountUsdc} = \min(5.00, \text{headroom}, \text{saveBalanceUsdc})$$
-   It will never allocate more than $5.00 in a single cycle (DCA discipline) and requires at least $1.00 liquid USDC in the Save Jar.
-4. **Valuation Premium Guard (The 10% Safety Rule)**: Compares live secondary DEX quotes against fundamental mark price.
-5. **Versioned V0 Jupiter Swap Execution**: Compiles a Versioned Transaction with Address Lookup Tables, executing the swap through on-chain CPI while verifying slippage and balance invariants.
-
----
-
-## 🛡️ The 10% Valuation Safety Rule
-
-Private company secondary tokens on decentralized exchanges often trade with volatile liquidity spikes. To protect children from paying inflated prices:
-
-1. The Keeper queries the **PreStocks Fundamental Registry** (`prestocks.com/api/prestocks`) to obtain the canonical share mark valuation.
-2. It fetches the live **Jupiter V6 DEX Quote** (`quote-api.jup.ag/v6/quote`) for the target PreStock asset.
-3. It computes the effective secondary execution price per share and calculates the premium percentage:
-   $$\text{Premium \%} = \frac{\text{Execution Price} - \text{Mark Price}}{\text{Mark Price}} \times 100$$
-4. **Safety Trigger**:
-   - If $\text{Premium} \le 10.0\%$, the purchase is approved.
-   - If $\text{Premium} > 10.0\%$, the keeper records `PREMIUM_TOO_HIGH` ("Too pricey") and aborts the purchase. Funds remain safe in USDC.
-
----
-
-## ⚡ Versioned Transactions (v0) & Address Lookup Tables
-
-Solana legacy transactions have a strict **1,232-byte MTU limit**. Modern Jupiter DEX routing (especially through Meteora DLMM, Raydium, and multi-hop routes) easily involves 30+ accounts, causing legacy transactions to reach over 1,600 bytes and fail with `Transaction too large`.
-
-The Moonjar Keeper addresses this by:
-- Compiling **Versioned Transactions (v0)** with Address Lookup Tables (ALTs).
-- Compressing raw transaction payload size from **1,658 bytes down to ~510 bytes**.
-- Setting compute unit limits to `800,000` via `ComputeBudgetProgram.setComputeUnitLimit` for multi-hop execution.
-
----
-
-## ⚙️ Configuration & Environment Variables
-
-| Variable | Default | Description |
-| :--- | :--- | :--- |
-| `SOLANA_RPC_URL` | `http://127.0.0.1:8899` | Solana RPC endpoint (Surfpool local mainnet fork or devnet/mainnet) |
-| `KEEPER_KEYPAIR_PATH` | `~/.config/solana/id.json` | Path to the keeper authority Solana keypair |
-| `KEEPER_PRIVATE_KEY` | *(optional)* | Base58 or JSON byte array for headless/Docker deployments |
-| `FORCE_BUY` | `false` | Set to `true` to override the 10% premium ceiling for testing |
-
----
-
-## 💻 Usage & Commands
+## How to Run
 
 ```bash
-# 1. Run persistent daemon (polls cluster every 30 seconds):
-pnpm --filter @moonjar/keeper dev
+# From monorepo root:
+pnpm dev:keeper                                    # Daemon — polls every 30 seconds
+pnpm --filter @moonjar/keeper once                 # One-shot scan, then exits
+npx tsx apps/keeper/src/index.ts --once --force-buy  # One-shot, bypasses 10% premium guard (dev only)
+```
 
-# 2. Run one-shot scan across all on-chain vaults:
-npx tsx apps/keeper/src/index.ts --once
+Or trigger a specific vault via the web API:
 
-# 3. Force buy (bypasses 10% premium ceiling for testing live swaps):
-npx tsx apps/keeper/src/index.ts --once --force-buy
-
-# 4. Trigger evaluation for a specific vault via HTTP API:
+```bash
 curl -X POST http://localhost:3000/api/keeper \
   -H "Content-Type: application/json" \
-  -d '{"vaultAddress": "<VAULT_PDA>", "forceBuy": true}'
+  -H "x-keeper-secret: your_secret_here" \
+  -d '{"vaultAddress": "<VAULT_PDA>", "forceBuy": false}'
 ```
 
 ---
 
-## 🪙 Supported PreStocks Token-2022 Mints
+## Environment Variables
 
-All supported PreStocks assets on Solana are Token-2022 mints with 9 decimals:
-
-| Company | Symbol | Mint Address |
+| Variable | Default | Notes |
 | :--- | :--- | :--- |
-| **SpaceX** | `SPACEX` | `PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh` |
-| **Anduril** | `ANDURIL` | `PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB` |
-| **Figure AI** | `FIGUREAI` | `PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd` |
-| **Anthropic** | `ANTHROPIC` | `Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw` |
-| **OpenAI** | `OPENAI` | `PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF` |
-| **Kalshi** | `KALSHI` | `PreLWGkkeqG1s4HEfFZSy9moCrJ7btsHuUtfcCeoRua` |
-| **Polymarket** | `POLYMARKET` | `Pre8AREmFPtoJFT8mQSXQLh56cwJmM7CFDRuoGBZiUP` |
+| `SOLANA_RPC_URL` | `http://127.0.0.1:8899` | Point to Surfpool for localnet, `https://api.devnet.solana.com` for devnet |
+| `VAULT_PROGRAM_ID` | `8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno` | Same on both clusters |
+| `KEEPER_KEYPAIR_PATH` | `~/.config/solana/id.json` | Path to keeper authority keypair file |
+| `KEEPER_PRIVATE_KEY` | — | Raw JSON byte array. Overrides `KEEPER_KEYPAIR_PATH`. Use for CI/Docker. |
+| `FORCE_BUY` | `false` | Set `true` to override premium ceiling. **Disabled in production** (`NODE_ENV === 'production'`). |
 
 ---
 
-## 📋 Decision Log Format
+## What the Keeper Actually Does
 
-The keeper records structured JSON audit logs adhering to the `BuyDecisionLog` interface:
+On every scan cycle:
+
+1. **Load live PreStock data**: Calls `https://prestocks.com/api/prestocks` for fundamental mark prices. Falls back to `PRESTOCKS_LIST` from `@moonjar/shared` if the API is unreachable.
+
+2. **Fetch all on-chain vaults**: Uses Anchor's `vaultProgram.account.childVault.all()` against the configured RPC.
+
+3. **For each vault, run the 5-stage pipeline**:
+
+```
+Stage 1: Vault status check
+├─ paused=true  → SKIP (VAULT_PAUSED)
+└─ graduated=true → SKIP (GRADUATED)
+
+Stage 2: Cost-basis cap headroom
+├─ headroom = (totalDeposited × moonCapBps / 10000) - moonCostBasis
+└─ headroom ≤ 0 → SKIP (COST_BASIS_CAP_EXCEEDED)
+
+Stage 3: Liquid USDC check
+├─ tradeAmount = min($5.00, headroom, saveBalance)
+└─ tradeAmount < $1.00 → SKIP (INSUFFICIENT_CASH)
+
+Stage 4: Valuation premium guard
+├─ Calls Jupiter API: api.jup.ag/swap/v1/quote
+│   (onlyDirectRoutes=true, slippageBps=200)
+├─ executionPrice = tradeAmountUsdc / (tokensOut / 1e9)
+├─ premium = (executionPrice - markPrice) / markPrice × 100
+├─ premium > 10.0% AND !forceBuy → SKIP (PREMIUM_TOO_HIGH)
+└─ No route available → SKIP
+
+Stage 5: Versioned V0 swap execution
+├─ Calls Jupiter: api.jup.ag/swap/v1/swap-instructions
+├─ Creates Moon Jar Token-2022 ATA idempotently
+├─ Resolves Address Lookup Tables
+├─ Compiles VersionedTransaction (v0) with ComputeBudget (800k units)
+└─ Signs with keeper keypair → sends execute_buy CPI to vault program
+```
+
+4. **Records a `BuyDecisionLog`** for every evaluation (BUY or SKIP) with machine reason and two human-readable explanations (kid-friendly + guardian-facing).
+
+---
+
+## On Devnet
+
+PreStock Token-2022 mints and their AMM pools (Meteora DLMM, Raydium) **only exist on Mainnet**. On devnet, Jupiter will return no swap routes, and Stage 4 will skip with `No swap route available for <symbol>`. All other stages and invariant checks still run correctly.
+
+If you want to test keeper execution on devnet, you'd need to create test liquidity pools for the specific mint pairs — which is not part of the current setup.
+
+## On Surfpool (localnet)
+
+Since Surfpool forks mainnet on demand, all Jupiter routes, PreStock mints, and AMM pools are available. This is the recommended environment for full end-to-end keeper testing.
+
+---
+
+## Decision Log Format
 
 ```json
 {
   "id": "dec-1727113800000",
-  "timestamp": "2026-09-28T14:30:00.000Z",
-  "vaultAddress": "5W4iP2Jz78R5Kz4vHkWz3VzB1x...",
+  "timestamp": "2026-09-30T14:30:00.000Z",
+  "vaultAddress": "5W4iP2Jz...",
   "symbol": "SPACEX",
   "action": "BUY",
   "premiumPct": 4.8,
@@ -138,7 +105,9 @@ The keeper records structured JSON audit logs adhering to the `BuyDecisionLog` i
   "amountOutTokens": 16516401,
   "machineReason": "PREMIUM_ACCEPTABLE (4.8% <= 10.0%)",
   "humanReasonKid": "Pip found a fair price for SpaceX and tucked a new piece into your Moon Jar!",
-  "humanReasonGuardian": "Executed algorithmic purchase for SPACEX at 4.8% premium. $5.00 allocated from Save Jar.",
+  "humanReasonGuardian": "Executed algorithmic purchase for SPACEX at 4.8% premium. $5.00 allocated.",
   "txSignature": "4nZt8k..."
 }
 ```
+
+Skips follow the same shape with `"action": "SKIP"`, no `txSignature`, and the machine reason explaining which stage triggered the skip.

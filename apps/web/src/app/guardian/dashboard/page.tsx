@@ -9,6 +9,7 @@ import {
   fetchAllOnChainVaults,
   OnChainVaultSummary,
   RPC_URL,
+  getNetworkLabel,
 } from '@/lib/onchain';
 import { Button } from '@/components/ui/Button';
 import { JarCard } from '@/components/ui/JarCard';
@@ -165,7 +166,7 @@ export default function GuardianDashboard() {
       }
     }
 
-    triggerToast(`Submitting $${amt.toFixed(2)} deposit on-chain to Surfpool...`);
+    triggerToast(`Submitting $${amt.toFixed(2)} deposit on-chain to ${getNetworkLabel()}...`);
 
     try {
       const res = await fetch('/api/deposit', {
@@ -204,7 +205,7 @@ export default function GuardianDashboard() {
     }
 
     setIsKeeperRunning(true);
-    triggerToast(`🤖 Keeper evaluating on-chain vault on Surfpool...`);
+    triggerToast(`🤖 Keeper evaluating on-chain vault on ${getNetworkLabel()}...`);
 
     try {
       const res = await fetch('/api/keeper', {
@@ -263,7 +264,7 @@ export default function GuardianDashboard() {
       <div className="bg-amber-50 border-2 border-ink rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-sticker-sm text-xs font-bold">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-ink">Surfpool Mainnet Fork:</span>
+          <span className="text-ink">{getNetworkLabel()}:</span>
           <span className="font-mono text-purple-950 font-normal bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
             {RPC_URL}
           </span>
@@ -489,7 +490,7 @@ export default function GuardianDashboard() {
                 size="sm"
                 onClick={() => handleRunKeeper(true)}
                 disabled={isKeeperRunning}
-                title="Execute Jupiter buy on Surfpool bypassing premium check"
+                title={`Execute Jupiter buy on ${getNetworkLabel()} bypassing premium check`}
                 className="shrink-0 text-xs px-2.5 sm:px-3 bg-purple-700 hover:bg-purple-800 text-white"
               >
                 <Zap className="w-3.5 h-3.5 mr-1" />
@@ -540,7 +541,7 @@ export default function GuardianDashboard() {
       >
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            Funds deposited go straight into {vault.metadata.nickname}'s <strong>Save Jar</strong> on Surfpool. The autonomous keeper will gradually buy into the Moon Jar over time according to your allocation and maximum cap.
+            Funds deposited go straight into {vault.metadata.nickname}'s <strong>Save Jar</strong> on-chain ({getNetworkLabel()}). The autonomous keeper will gradually buy into the Moon Jar over time according to your allocation and maximum cap.
           </p>
 
           <div>

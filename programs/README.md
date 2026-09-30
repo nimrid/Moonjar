@@ -1,65 +1,101 @@
 # ⚓ Moonjar Solana Programs
 
-> The on-chain smart contract suite for Moonjar built with Anchor 0.30 on Solana, utilizing Token-2022 and Cross-Program Invocation (CPI) into Jupiter V6 aggregators.
+> On-chain smart contracts for Moonjar — built with Anchor 0.30 on Solana, using Token-2022 and CPI into Jupiter V6 aggregators.
 
 ---
 
-## 📖 Table of Contents
+## 📦 Programs
 
-1. [Programs Overview](#-programs-overview)
-2. [On-Chain Architecture & PDAs](#-on-chain-architecture--pdas)
-3. [Instructions & Program Flow](#-instructions--program-flow)
-4. [Building & Testing](#-building--testing)
+| Program | Program ID | Description |
+| :--- | :--- | :--- |
+| **`vault`** | `8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno` | Core child savings vault. All production deployments use this program. |
+| **`mock_swap`** | `C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE` | Offline SPL token swap harness. **Only used by `anchor test`.** Never deployed for real use. |
 
----
+### When is each program used?
 
-## 🏗️ Programs Overview
-
-| Program | Directory | Program ID | Description |
+| Environment | `vault` deployed? | `mock_swap` deployed? | Swaps |
 | :--- | :--- | :--- | :--- |
-| **`vault`** | [`programs/vault`](file:///Users/hng/Documents/antigravity/MoonJar/programs/vault) | `8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno` | Core child savings vault contract, cost-basis invariants, match pool, and swap CPI |
-| **`mock_swap`** | [`programs/mock-swap`](file:///Users/hng/Documents/antigravity/MoonJar/programs/mock-swap) | `C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE` | Offline mock DEX swap harness for deterministic CI/CD integration testing |
+| **Surfpool (localnet)** | ✅ via `surfpool run deployment` | ✅ also deployed (but not used by keeper/web) | Live Jupiter CPI through mainnet fork |
+| **Devnet** | ✅ via `anchor deploy` | ✅ also deployed (but not used by keeper/web) | Jupiter called but no routes exist on devnet |
+| **`anchor test`** | ✅ compiled + loaded automatically | ✅ compiled + loaded automatically | `mock_swap` CPI (fixed-rate test pool) |
+
+The `mock_swap` program is only **invoked** inside `tests/vault.ts`. The keeper bot (`apps/keeper/src/index.ts`) and web app (`apps/web`) always call Jupiter directly and never reference `mock_swap`.
 
 ---
 
-## 🔑 On-Chain Architecture & PDAs
+## 🔑 PDAs and Seeds
 
-### 1. Global Config PDA
+### Config PDA
 - **Seeds**: `[b"config"]`
-- Stores administrative settings, registered keeper authority public key, canonical Circle USDC mint, and allowed PreStocks Token-2022 mints.
+- Stores: admin pubkey, keeper authority, USDC mint, max slippage BPS, match BPS, match cap per vault, allowed PreStock mints (up to 12)
+- Initialized once via `pnpm init-cluster`
 
-### 2. Child Vault PDA
-- **Seeds**: `[b"vault", guardian_pubkey.as_ref(), &vault_index.to_le_bytes()]`
-- Owns the on-chain USDC token account and Token-2022 PreStock accounts.
-- Enforces basis point allocation caps (`moon_cap_bps`, e.g. 2000 = 20%).
-- Tracks cumulative `total_deposited` and `moon_cost_basis`.
+### Child Vault PDA
+- **Seeds**: `[b"vault", guardian_pubkey (32 bytes), child_index (8 bytes le)]`
+- Stores: guardian, child index, nickname hash (sha256), unlock timestamp, moon cap BPS, cost basis, total deposited, basket entries (up to 8), paused/graduated flags
+- Owns a USDC Save Jar ATA and Token-2022 Moon Jar ATAs for each basket asset
 
-### 3. Match Pool PDA
+### Match Pool PDA
 - **Seeds**: `[b"match_pool"]`
-- Escrows family sponsor matching funds, programmatically matching deposits according to sponsor rules.
+- Escrows family sponsor USDC that gets matched into vaults by the keeper
 
 ---
 
-## 📜 Instructions & Program Flow
+## 📜 Instructions
 
-1. **`initialize_config`**: Deploys the global config PDA and sets keeper authority and token whitelist.
-2. **`create_vault`**: Initializes a `ChildVault` PDA for a guardian with child nickname hash, avatar tag, and lock duration.
-3. **`deposit`**: Deposits USDC into the vault's Save Jar, updating `total_deposited`.
-4. **`withdraw`**: Allows the guardian to withdraw Save Jar USDC directly at any time (un-gated by pause status).
-5. **`execute_buy`**: Authorized keeper triggers a swap instruction CPI (via Jupiter DLMM/AMM or mock swap), exchanging Save Jar USDC for PreStock tokens while strictly validating the cost-basis cap invariant.
-6. **`set_paused`**: Allows the guardian to temporarily pause automatic keeper purchases.
+| Instruction | Signer | What it does |
+| :--- | :--- | :--- |
+| `init_config` | Admin | Creates the global Config PDA. Run once per cluster. |
+| `create_vault` | Guardian | Creates a ChildVault PDA + Save Jar ATA. Validates basket weights sum to 10,000 bps and all mints are in the allowed list. |
+| `deposit` | Guardian | Transfers USDC from guardian wallet into the vault Save Jar ATA. Updates `total_deposited`. |
+| `withdraw` | Guardian | Withdraws Save Jar USDC back to guardian. Always allowed even when paused. |
+| `execute_buy` | Keeper | Authorised only when `caller == config.keeper`. Passes CPI data + remaining accounts to any swap program (Jupiter on prod, mock_swap in tests). Enforces cost-basis cap and slippage. |
+| `set_paused` | Guardian | Pauses or unpauses keeper buy execution. Does not affect withdrawals. |
+| `set_caps` | Guardian | Updates `moon_cap_bps` (capped at 5000 = 50% hard max). |
+| `set_basket` | Guardian | Replaces basket entries. Validates weights sum to 10,000 bps and all mints are allowed. |
+| `apply_match` | Keeper | Moves matching USDC from the Match Pool PDA into the vault Save Jar. |
+
+### On-Chain `execute_buy` invariants
+
+The `execute_buy` instruction verifies all of the following before and after the swap CPI:
+
+1. `caller.key() == config.keeper` — rejects with `NotKeeper` if not
+2. `mint_out` is in `config.allowed_mints` — rejects with `MintNotAllowed` if not
+3. Cost-basis headroom: `moon_cost_basis + amount_in ≤ total_deposited × moon_cap_bps / 10000` — rejects with `CapExceeded`
+4. Slippage: `min_out ≥ quoted_out × (10000 - max_slippage_bps) / 10000` — rejects with `SlippageTooLoose`
+5. After CPI: verifies `tokens_received ≥ min_out` — rejects with `SwapOutputTooLow` if DEX underdelivered
 
 ---
 
-## 🧪 Building & Testing
+## 🧪 Building and Testing
 
 ```bash
-# 1. Compile Anchor programs:
+# Compile both programs (produces target/idl/*.json and target/deploy/*.so):
 anchor build
 
-# 2. Run the full Anchor test suite:
+# Run all 13 Anchor integration tests against a blank test-validator:
+# Uses mock_swap as the CPI swap target. No internet required.
 anchor test
 
-# 3. Deploy locally to Surfpool cluster:
+# Deploy vault to Surfpool localnet (via Surfpool runbook):
 surfpool run deployment -u --env localnet
+
+# Deploy vault to devnet (standard Anchor deploy):
+anchor deploy --provider.cluster devnet
 ```
+
+---
+
+## 🪙 Allowed PreStock Mints (Mainnet)
+
+| Company | Mint Address |
+| :--- | :--- |
+| SpaceX | `PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh` |
+| Anduril | `PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB` |
+| Figure AI | `PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd` |
+| Anthropic | `Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw` |
+| OpenAI | `PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF` |
+| Kalshi | `PreLWGkkeqG1s4HEfFZSy9moCrJ7btsHuUtfcCeoRua` |
+| Polymarket | `Pre8AREmFPtoJFT8mQSXQLh56cwJmM7CFDRuoGBZiUP` |
+
+All are Token-2022 mints with 9 decimals. These mints exist on **Mainnet only**. On devnet and test-validator they do not exist — `init-cluster.ts` registers them in the config but the keeper will find no Jupiter routes.

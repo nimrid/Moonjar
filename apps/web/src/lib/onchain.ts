@@ -26,6 +26,30 @@ export function getSolanaConnection(): Connection {
   return new Connection(RPC_URL, 'confirmed');
 }
 
+/**
+ * Returns a human-readable network label based on the active RPC URL.
+ * - localhost / 127.0.0.1 → "Surfpool Mainnet Fork"
+ * - devnet              → "Solana Devnet"
+ * - mainnet             → "Solana Mainnet"
+ * - anything else       → the raw hostname
+ */
+export function getNetworkLabel(rpcUrl: string = RPC_URL): string {
+  if (rpcUrl.includes('127.0.0.1') || rpcUrl.includes('localhost')) {
+    return 'Surfpool Mainnet Fork';
+  }
+  if (rpcUrl.includes('devnet')) {
+    return 'Solana Devnet';
+  }
+  if (rpcUrl.includes('mainnet')) {
+    return 'Solana Mainnet';
+  }
+  try {
+    return new URL(rpcUrl).hostname;
+  } catch {
+    return rpcUrl;
+  }
+}
+
 export interface OnChainVaultSummary {
   address: string;
   guardian: string;
