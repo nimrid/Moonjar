@@ -119,8 +119,8 @@ export default function DecisionsPage() {
         const premium = calculatePremiumPct(token.tokenPrice, token.markPrice);
         const priceCheck = getPriceCheck(premium);
 
-        const maxAllowedMoon = (vault.totalDepositedUsdc * vault.moonCapBps) / 10000;
-        const remainingCapHeadroom = maxAllowedMoon - vault.moonCostBasisUsdc;
+        const maxAllowedMoon = ((vault.totalDepositedUsdc || 0) * (vault.moonCapBps || 2000)) / 10000;
+        const remainingCapHeadroom = maxAllowedMoon - (vault.moonCostBasisUsdc || 0);
 
         if (vault.isPaused) {
           newLog = {
@@ -142,7 +142,7 @@ export default function DecisionsPage() {
             symbol: token.symbol,
             action: 'SKIP',
             premiumPct: Number(premium.toFixed(2)),
-            machineReason: `COST_BASIS_CAP_EXCEEDED (${vault.moonCostBasisUsdc.toFixed(2)} >= ${maxAllowedMoon.toFixed(2)})`,
+            machineReason: `COST_BASIS_CAP_EXCEEDED (${(vault.moonCostBasisUsdc || 0).toFixed(2)} >= ${maxAllowedMoon.toFixed(2)})`,
             humanReasonKid: 'Your Moon Jar has reached its safety capacity! Pip is keeping coins safe in the Save Jar.',
             humanReasonGuardian: `Moon Jar cost basis reached guardian cap of ${vault.moonCapBps / 100}%. Skipped ${token.symbol}.`,
           };

@@ -88,10 +88,12 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
     setTimeout(() => setCopiedCmd(false), 2000);
   };
 
-  const maxAmount = tokenType === 'USDC' ? usdcBalance : Math.max(0, solBalance - 0.01);
+  const safeUsdcBalance = Number(usdcBalance ?? 0);
+  const safeSolBalance = Number(solBalance ?? 0);
+  const maxAmount = tokenType === 'USDC' ? safeUsdcBalance : Math.max(0, safeSolBalance - 0.01);
 
   const handleSetMax = () => {
-    setAmount(maxAmount.toFixed(tokenType === 'USDC' ? 2 : 4));
+    setAmount((maxAmount ?? 0).toFixed(tokenType === 'USDC' ? 2 : 4));
   };
 
   const handleQuickAdd = (val: number) => {
@@ -106,13 +108,13 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
       return;
     }
 
-    if (tokenType === 'USDC' && numAmount > usdcBalance) {
-      setErrorMessage(`Insufficient USDC balance. You have $${usdcBalance.toFixed(2)} USDC.`);
+    if (tokenType === 'USDC' && numAmount > safeUsdcBalance) {
+      setErrorMessage(`Insufficient USDC balance. You have $${safeUsdcBalance.toFixed(2)} USDC.`);
       return;
     }
 
-    if (tokenType === 'SOL' && numAmount > solBalance) {
-      setErrorMessage(`Insufficient SOL balance. You have ${solBalance.toFixed(4)} SOL.`);
+    if (tokenType === 'SOL' && numAmount > safeSolBalance) {
+      setErrorMessage(`Insufficient SOL balance. You have ${safeSolBalance.toFixed(4)} SOL.`);
       return;
     }
 
@@ -260,13 +262,13 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
             <div className="bg-white p-2 rounded-xl border border-amber-200 text-center">
               <span className="block text-[10px] font-bold uppercase text-slate-500 font-display">USDC Balance</span>
               <span className="text-sm font-extrabold text-emerald-700 font-display">
-                ${usdcBalance.toFixed(2)}
+                ${safeUsdcBalance.toFixed(2)}
               </span>
             </div>
             <div className="bg-white p-2 rounded-xl border border-amber-200 text-center">
               <span className="block text-[10px] font-bold uppercase text-slate-500 font-display">SOL (Gas)</span>
               <span className="text-sm font-extrabold text-indigo-700 font-display">
-                {solBalance.toFixed(3)} SOL
+                {safeSolBalance.toFixed(3)} SOL
               </span>
             </div>
           </div>
@@ -396,7 +398,7 @@ export const WalletTransferModal: React.FC<WalletTransferModalProps> = ({
               onClick={handleSetMax}
               className="text-[11px] font-bold text-purple-700 hover:underline font-display"
             >
-              Max: {tokenType === 'USDC' ? `$${usdcBalance.toFixed(2)}` : `${maxAmount.toFixed(3)} SOL`}
+              Max: {tokenType === 'USDC' ? `$${safeUsdcBalance.toFixed(2)}` : `${(maxAmount ?? 0).toFixed(3)} SOL`}
             </button>
           </div>
 

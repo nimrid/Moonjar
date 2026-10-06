@@ -75,6 +75,7 @@ export interface GuardianWalletContextType {
     basket?: Array<{ mint: PublicKey; weightBps: number }>;
     unlockYears?: number;
     initialDepositUsdc?: number;
+    childIndex?: bigint | number;
   }) => Promise<{ vaultAddress: string; signature: string }>;
   updateVaultSettings: (params: {
     vaultAddress: string;
@@ -431,17 +432,27 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       const signed = await signTransaction(tx);
       const rawTx = signed.serialize();
 
-      const txSig = await conn.sendRawTransaction(rawTx, {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed',
-      });
+      try {
+        const txSig = await conn.sendRawTransaction(rawTx, {
+          skipPreflight: false,
+          preflightCommitment: 'confirmed',
+        });
 
-      await conn.confirmTransaction(
-        { signature: txSig, blockhash, lastValidBlockHeight },
-        'confirmed'
-      );
+        await conn.confirmTransaction(
+          { signature: txSig, blockhash, lastValidBlockHeight },
+          'confirmed'
+        );
 
-      return txSig;
+        return txSig;
+      } catch (err: any) {
+        const logs = err?.logs || (typeof err?.getLogs === 'function' ? err.getLogs() : []);
+        const logsText = Array.isArray(logs) ? logs.join(' ') : '';
+        const fullErrText = `${err?.message || ''} ${logsText}`;
+        if (fullErrText.includes('already in use') || fullErrText.includes('Allocate: account Address')) {
+          throw new Error('This child vault account already exists on-chain. You can view and manage it on your guardian dashboard.');
+        }
+        throw err;
+      }
     },
     [getActiveWallet, connection, signTransaction]
   );
@@ -609,16 +620,35 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       basket,
       unlockYears = 10,
       initialDepositUsdc,
+      childIndex,
     }: {
       nickname: string;
       moonCapBps?: number;
       basket?: Array<{ mint: PublicKey; weightBps: number }>;
       unlockYears?: number;
       initialDepositUsdc?: number;
+      childIndex?: bigint | number;
     }): Promise<{ vaultAddress: string; signature: string }> => {
       const { activePublicKey } = await getActiveWallet();
-      const childIndex = 0n;
-      const [vaultPda] = findVaultPda(activePublicKey, childIndex);
+
+      let resolvedChildIndex = childIndex !== undefined ? BigInt(childIndex) : 0n;
+      if (childIndex === undefined) {
+        // If child 0n is already taken on-chain, find first available index
+        const [pda0] = findVaultPda(activePublicKey, 0n);
+        const acc0 = await connection.getAccountInfo(pda0);
+        if (acc0) {
+          for (let idx = 1n; idx < 10n; idx++) {
+            const [cand] = findVaultPda(activePublicKey, idx);
+            const candAcc = await connection.getAccountInfo(cand);
+            if (!candAcc) {
+              resolvedChildIndex = idx;
+              break;
+            }
+          }
+        }
+      }
+
+      const [vaultPda] = findVaultPda(activePublicKey, resolvedChildIndex);
 
       // Sha256 nickname hash (zero PII on-chain)
       const encoder = new TextEncoder();
@@ -638,7 +668,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
 
       const createIx = createCreateVaultInstruction({
         guardian: activePublicKey,
-        childIndex,
+        childIndex: resolvedChildIndex,
         nicknameHash,
         unlockTs,
         moonCapBps,
@@ -685,7 +715,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       await refreshBalances();
       return { vaultAddress: vaultPda.toBase58(), signature: txSig };
     },
-    [getActiveWallet, sendTransaction, refreshBalances]
+    [getActiveWallet, connection, sendTransaction, refreshBalances]
   );
 
   const updateVaultSettings = useCallback(

@@ -156,11 +156,11 @@ export default function MoonJarPage({ params }: { params: { token: string } }) {
                       <div>
                         <span className="text-slate-500 font-bold">You own: </span>
                         <span className="font-display font-extrabold text-ink">
-                          {owned.sharesOwned >= 1 ? owned.sharesOwned.toFixed(2) : owned.sharesOwned.toFixed(4)} shares
+                          {(owned.sharesOwned ?? 0) >= 1 ? (owned.sharesOwned ?? 0).toFixed(2) : (owned.sharesOwned ?? 0).toFixed(4)} shares
                         </span>
                       </div>
                       <div className="font-display font-extrabold text-purple-800">
-                        ${owned.currentValueUsd.toFixed(2)} value
+                        ${(owned.currentValueUsd ?? 0).toFixed(2)} value
                       </div>
                     </div>
                   )}
@@ -168,7 +168,7 @@ export default function MoonJarPage({ params }: { params: { token: string } }) {
 
                 <div className="pt-4 border-t-2 border-slate-100 flex items-center justify-between mt-3">
                   <div className="text-[11px] text-slate-400 font-bold">
-                    Primary Valuation: ${(item.markValuation / 1_000_000_000).toFixed(0)}B
+                    Primary Valuation: ${(Number(item.markValuation ?? 0) / 1_000_000_000).toFixed(0)}B
                   </div>
                   <Link href={`/k/${token}/company/${item.symbol.toLowerCase()}`}>
                     <Button variant="secondary" size="sm" className="text-xs gap-1.5 py-1">

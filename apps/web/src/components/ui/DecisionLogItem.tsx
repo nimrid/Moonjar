@@ -46,15 +46,19 @@ export const DecisionLogItem: React.FC<DecisionLogItemProps> = ({
         <div className="bg-amber-50 p-2 rounded-lg border border-amber-200">
           <span className="text-slate-500 block">Amount</span>
           <span className="font-numbers font-bold text-ink">
-            {decision.amountInUsdc !== undefined
-              ? `$${(decision.amountInUsdc / 1_000_000).toFixed(2)} USDC`
+            {decision.amountInUsdc != null
+              ? `$${(Number(decision.amountInUsdc) / 1_000_000).toFixed(2)} USDC`
               : 'N/A'}
           </span>
         </div>
         <div className="bg-purple-50 p-2 rounded-lg border border-purple-200">
           <span className="text-slate-500 block">Premium</span>
           <span className="font-numbers font-bold text-purple-900">
-            {decision.premiumPct >= 0 ? `+${decision.premiumPct.toFixed(1)}%` : `${decision.premiumPct.toFixed(1)}%`}
+            {decision.premiumPct != null
+              ? decision.premiumPct >= 0
+                ? `+${Number(decision.premiumPct).toFixed(1)}%`
+                : `${Number(decision.premiumPct).toFixed(1)}%`
+              : 'N/A'}
           </span>
         </div>
       </div>

@@ -76,8 +76,8 @@ export default function KidHomePage({ params }: { params: { token: string } }) {
     });
   };
 
-  const totalValue = vault.saveBalanceUsdc + vault.moonBalanceUsdc;
-  const savePct = totalValue > 0 ? Math.round((vault.saveBalanceUsdc / totalValue) * 100) : 100;
+  const totalValue = (vault.saveBalanceUsdc || 0) + (vault.moonBalanceUsdc || 0);
+  const savePct = totalValue > 0 ? Math.round(((vault.saveBalanceUsdc || 0) / totalValue) * 100) : 100;
   const moonPct = 100 - savePct;
   const activeAllocations = vault.allocations.filter((a) => a.sharesOwned > 0);
 
@@ -110,7 +110,7 @@ export default function KidHomePage({ params }: { params: { token: string } }) {
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           Zero price anxiety mode: updated once daily
         </span>
-        <span>Total: ${totalValue.toFixed(2)}</span>
+        <span>Total: ${(totalValue ?? 0).toFixed(2)}</span>
       </div>
 
       {/* Dual Tactile Jars */}
@@ -182,7 +182,7 @@ export default function KidHomePage({ params }: { params: { token: string } }) {
                     {item.symbol}
                   </div>
                   <div className="text-[11px] text-slate-500 font-bold truncate">
-                    ${item.currentValueUsd.toFixed(2)} • {item.sharesOwned >= 1 ? item.sharesOwned.toFixed(2) : item.sharesOwned.toFixed(4)} shares
+                    ${(item.currentValueUsd ?? 0).toFixed(2)} • {(item.sharesOwned ?? 0) >= 1 ? (item.sharesOwned ?? 0).toFixed(2) : (item.sharesOwned ?? 0).toFixed(4)} shares
                   </div>
                 </div>
               </Link>

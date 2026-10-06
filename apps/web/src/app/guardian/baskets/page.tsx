@@ -338,7 +338,9 @@ export default function BasketsPage() {
 
         <div className="space-y-4 divide-y divide-slate-100">
           {tokens.map((token) => {
-            const prem = calculatePremiumPct(token.tokenPrice, token.markPrice);
+            const tokenPrice = Number(token.tokenPrice ?? 0);
+            const markPrice = Number(token.markPrice ?? 0);
+            const prem = calculatePremiumPct(tokenPrice, markPrice);
             const status = getPriceCheck(prem);
             const val = weights[token.symbol] || 0;
 
@@ -350,7 +352,7 @@ export default function BasketsPage() {
                     <span className="text-xs text-slate-400 font-mono">({token.symbol})</span>
                   </div>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs font-numbers text-slate-600">${token.tokenPrice.toFixed(2)}</span>
+                    <span className="text-xs font-numbers text-slate-600">${tokenPrice.toFixed(2)}</span>
                     <PriceTagPill category={status.tag} />
                   </div>
                 </div>

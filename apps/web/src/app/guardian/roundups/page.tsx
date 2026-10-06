@@ -107,7 +107,7 @@ export default function RoundupsPage() {
   }, [guardianAddress]);
 
   const transactions: OnChainRoundupTx[] = vault?.roundupTransactions || [];
-  const totalSavedThisWeek = transactions.reduce((acc, s) => acc + (s.roundedUpUsdc * multiplier), 0);
+  const totalSavedThisWeek = transactions.reduce((acc, s) => acc + ((s.roundedUpUsdc || 0) * multiplier), 0);
 
   const executeRoundupDeposit = useCallback(
     async (roundDiff: number, tx: OnChainRoundupTx) => {
@@ -378,7 +378,7 @@ export default function RoundupsPage() {
                 On-Chain Activity Detected!
               </div>
               <div className="text-xs text-emerald-100">
-                Sent ${lastDetectedTx.volume.toFixed(2)} USDC → Swept +${(lastDetectedTx.roundedUp * multiplier).toFixed(2)} spare change into Save & Moon Jars!
+                Sent ${(lastDetectedTx.volume ?? 0).toFixed(2)} USDC → Swept +${((lastDetectedTx.roundedUp ?? 0) * multiplier).toFixed(2)} spare change into Save & Moon Jars!
               </div>
             </div>
           </div>
@@ -459,7 +459,7 @@ export default function RoundupsPage() {
           <div className="p-3.5 rounded-2xl bg-amber-50 border-2 border-ink shadow-sticker-sm">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Swept This Week</div>
             <div className="text-2xl font-display font-extrabold text-ink mt-0.5">
-              ${totalSavedThisWeek.toFixed(2)} <span className="text-xs text-slate-500 font-bold">/ ${weeklyCap}.00 cap</span>
+              ${(totalSavedThisWeek ?? 0).toFixed(2)} <span className="text-xs text-slate-500 font-bold">/ ${weeklyCap}.00 cap</span>
             </div>
             <div className="w-full h-2 bg-slate-200 rounded-full mt-2 overflow-hidden border border-ink">
               <div 
@@ -677,9 +677,11 @@ export default function RoundupsPage() {
             ) : (
               <div className="space-y-2.5 mt-4 max-h-[340px] overflow-y-auto pr-1">
                 {transactions.map((tx) => {
-                  const totalAdded = (tx.roundedUpUsdc * multiplier).toFixed(2);
+                  const roundedUp = Number(tx.roundedUpUsdc ?? 0);
+                  const totalAdded = (roundedUp * multiplier).toFixed(2);
                   const savePortion = (parseFloat(totalAdded) * 0.8).toFixed(2);
                   const moonPortion = (parseFloat(totalAdded) * 0.2).toFixed(2);
+                  const volume = Number(tx.volumeUsd ?? 0);
 
                   return (
                     <div 
@@ -707,7 +709,7 @@ export default function RoundupsPage() {
                       </div>
 
                       <div className="text-right shrink-0">
-                        <div className="text-xs font-mono text-slate-500">${tx.volumeUsd.toFixed(2)}</div>
+                        <div className="text-xs font-mono text-slate-500">${volume.toFixed(2)}</div>
                         <div className="text-xs font-display font-extrabold text-emerald-700">
                           +${totalAdded}
                         </div>

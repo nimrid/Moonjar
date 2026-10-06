@@ -138,7 +138,7 @@ export async function fetchOnChainVaultState(
       const tokenMeta = findPreStockToken(mintStr, liveTokens);
 
       const symbol = tokenMeta ? tokenMeta.symbol : mintStr.slice(0, 6);
-      const price = tokenMeta ? tokenMeta.tokenPrice : 0;
+      const price = tokenMeta && tokenMeta.tokenPrice != null ? Number(tokenMeta.tokenPrice) : 0;
 
       let shares = 0;
       // Try Token-2022 first (all PreStocks are Token-2022)
@@ -167,14 +167,14 @@ export async function fetchOnChainVaultState(
         }
       }
 
-      const val = Number((shares * price).toFixed(2));
+      const val = Number(((shares || 0) * price).toFixed(2));
       totalMoonValue += val;
 
       allocations.push({
         symbol,
         mint: mintStr,
         weightBps: entry.weightBps,
-        sharesOwned: Number(shares.toFixed(4)),
+        sharesOwned: Number((shares || 0).toFixed(4)),
         currentValueUsd: val,
       });
     }
@@ -187,12 +187,12 @@ export async function fetchOnChainVaultState(
       Number(vaultAccount.roundupThreshold) / Math.pow(10, USDC_DECIMALS);
 
     return {
-      saveBalanceUsdc: Number(saveBalanceUsdc.toFixed(2)),
-      moonBalanceUsdc: Number(totalMoonValue.toFixed(2)),
-      moonCostBasisUsdc: Number(moonCostBasis.toFixed(2)),
-      totalDepositedUsdc: Number(totalDeposited.toFixed(2)),
+      saveBalanceUsdc: Number((saveBalanceUsdc || 0).toFixed(2)),
+      moonBalanceUsdc: Number((totalMoonValue || 0).toFixed(2)),
+      moonCostBasisUsdc: Number((moonCostBasis || 0).toFixed(2)),
+      totalDepositedUsdc: Number((totalDeposited || 0).toFixed(2)),
       moonCapBps: vaultAccount.moonCapBps,
-      roundupThresholdUsdc: Number(roundupThresholdUsdc.toFixed(2)),
+      roundupThresholdUsdc: Number((roundupThresholdUsdc || 0).toFixed(2)),
       isPaused: vaultAccount.paused,
       isGraduated: vaultAccount.graduated,
       allocations,

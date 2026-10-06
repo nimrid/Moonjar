@@ -39,11 +39,11 @@ export const JarCard: React.FC<JarCardProps> = ({
   className = '',
 }) => {
   const isSave = type === 'save';
-  const effectiveBalance = balanceUsdc !== undefined ? balanceUsdc : (balanceUsd !== undefined ? balanceUsd : 0);
-  const effectiveGoal = totalGoalUsdc !== undefined ? totalGoalUsdc : (goalUsd !== undefined ? goalUsd : 100);
+  const effectiveBalance = Number(balanceUsdc ?? balanceUsd ?? 0);
+  const effectiveGoal = Number(totalGoalUsdc ?? goalUsd ?? 100);
   const effectiveTitle = title || (isSave ? 'The Save Jar' : 'The Moon Jar');
   const effectiveSubtitle = subtitle || (status ? status : (isSave ? 'Rock-solid USDC' : 'Frontier PreStocks'));
-  const fillPct = Math.min(Math.max((effectiveBalance / effectiveGoal) * 100, 15), 90);
+  const fillPct = Math.min(Math.max((effectiveBalance / (effectiveGoal || 1)) * 100, 15), 90);
   const liquidY = 160 - (fillPct / 100) * 110; // SVG coordinates from 50 to 160
 
   return (
@@ -154,7 +154,7 @@ export const JarCard: React.FC<JarCardProps> = ({
 
       <div className="mt-3 text-center">
         <span className="text-2xl sm:text-3xl font-extrabold text-ink font-numbers tracking-tight">
-          ${effectiveBalance.toFixed(2)}
+          ${(effectiveBalance ?? 0).toFixed(2)}
         </span>
         {percentageOfPortfolio !== undefined && (
           <p className="text-xs text-slate-500 font-bold mt-0.5">
@@ -172,11 +172,11 @@ export const JarCard: React.FC<JarCardProps> = ({
       <div className="w-full mt-4 bg-slate-100 rounded-full h-3 border-2 border-ink overflow-hidden">
         <div
           className={`h-full transition-all duration-500 ${isSave ? 'bg-sun' : 'bg-grape'}`}
-          style={{ width: `${Math.min((effectiveBalance / effectiveGoal) * 100, 100)}%` }}
+          style={{ width: `${Math.min(((effectiveBalance ?? 0) / (effectiveGoal || 100)) * 100, 100)}%` }}
         />
       </div>
       <span className="text-[11px] text-slate-500 mt-1 font-semibold">
-        ${effectiveBalance.toFixed(0)} of ${effectiveGoal} goal
+        ${(effectiveBalance ?? 0).toFixed(0)} of {effectiveGoal} goal
       </span>
     </div>
   );

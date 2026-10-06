@@ -67,14 +67,14 @@ export const TokenSticker: React.FC<TokenStickerProps> = ({
               {allocationBps / 100}% of Moon Jar
             </span>
           )}
-          {shares !== undefined && (
+          {shares != null && (
             <span className="font-numbers text-slate-600">
-              {shares.toFixed(2)} parts
+              {Number(shares).toFixed(2)} parts
             </span>
           )}
-          {valueUsd !== undefined && (
+          {valueUsd != null && (
             <span className="font-numbers font-bold text-emerald-700 text-sm">
-              ${valueUsd.toFixed(2)}
+              ${Number(valueUsd).toFixed(2)}
             </span>
           )}
         </div>

@@ -31,6 +31,7 @@ import {
   Zap,
   CheckCircle2,
   ArrowRightLeft,
+  Loader2,
 } from 'lucide-react';
 
 export default function GuardianDashboard() {
@@ -40,6 +41,7 @@ export default function GuardianDashboard() {
   const [depositAmount, setDepositAmount] = useState('25');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSyncingOnChain, setIsSyncingOnChain] = useState(false);
+  const [hasCheckedCluster, setHasCheckedCluster] = useState(false);
   const [isKeeperRunning, setIsKeeperRunning] = useState(false);
   const [availableVaults, setAvailableVaults] = useState<OnChainVaultSummary[]>([]);
   const { tokens, getToken } = usePreStocks();
@@ -99,6 +101,7 @@ export default function GuardianDashboard() {
         console.warn('Sync failed:', err);
       } finally {
         setIsSyncingOnChain(false);
+        setHasCheckedCluster(true);
       }
     },
     [vault, tokens, publicKey]
@@ -110,6 +113,16 @@ export default function GuardianDashboard() {
     syncOnChain(v?.metadata?.vaultAddress);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicKey]);
+
+  if (!vault && (!hasCheckedCluster || isSyncingOnChain)) {
+    return (
+      <div className="bg-white rounded-3xl border-3 border-ink p-10 shadow-sticker text-center max-w-md mx-auto my-16 space-y-4">
+        <Loader2 className="w-10 h-10 animate-spin text-purple-600 mx-auto" />
+        <h2 className="text-xl font-display font-extrabold text-ink">Syncing On-Chain Vault...</h2>
+        <p className="text-xs text-slate-500 font-medium">Connecting to Solana {getNetworkLabel()} to load your child vault.</p>
+      </div>
+    );
+  }
 
   if (!vault) {
     return (
@@ -133,9 +146,11 @@ export default function GuardianDashboard() {
     );
   }
 
-  const totalBalance = vault.saveBalanceUsdc + vault.moonBalanceUsdc;
-  const currentMoonPct = vault.totalDepositedUsdc > 0 ? (vault.moonCostBasisUsdc / vault.totalDepositedUsdc) * 100 : 0;
-  const maxMoonPct = vault.moonCapBps / 100;
+  const totalBalance = (vault.saveBalanceUsdc || 0) + (vault.moonBalanceUsdc || 0);
+  const totalDeposited = vault.totalDepositedUsdc || 0;
+  const moonCostBasis = vault.moonCostBasisUsdc || 0;
+  const currentMoonPct = totalDeposited > 0 ? (moonCostBasis / totalDeposited) * 100 : 0;
+  const maxMoonPct = (vault.moonCapBps || 0) / 100;
 
   const handleTogglePause = () => {
     const updated = { ...vault, isPaused: !vault.isPaused };
@@ -246,7 +261,7 @@ export default function GuardianDashboard() {
   };
 
   const roundupTxs = vault.roundupTransactions || [];
-  const accumulatedThisWeek = roundupTxs.reduce((sum, tx) => sum + tx.roundedUpUsdc, 0);
+  const accumulatedThisWeek = roundupTxs.reduce((sum, tx) => sum + (tx.roundedUpUsdc || 0), 0);
   const saveRoundupSplit = (accumulatedThisWeek * 0.8).toFixed(2);
   const moonRoundupSplit = (accumulatedThisWeek * 0.2).toFixed(2);
 
@@ -279,7 +294,7 @@ export default function GuardianDashboard() {
             >
               {availableVaults.map((v) => (
                 <option key={v.address} value={v.address}>
-                  Vault {v.address.slice(0, 6)}... (${v.totalDepositedUsdc.toFixed(0)} deposited)
+                  Vault {v.address.slice(0, 6)}... (${(v.totalDepositedUsdc ?? 0).toFixed(0)} deposited)
                 </option>
               ))}
             </select>
@@ -380,9 +395,9 @@ export default function GuardianDashboard() {
         <JarCard
           type="moon"
           title="Moon Jar (PreStocks)"
-          subtitle={`SpaceX & Frontier Assets (Cost Basis: $${vault.moonCostBasisUsdc.toFixed(2)})`}
-          balanceUsd={vault.moonBalanceUsdc}
-          goalUsd={Math.max(100, vault.totalDepositedUsdc)}
+          subtitle={`SpaceX & Frontier Assets (Cost Basis: $${moonCostBasis.toFixed(2)})`}
+          balanceUsd={vault.moonBalanceUsdc ?? 0}
+          goalUsd={Math.max(100, totalDeposited)}
           tokensCount={vault.allocations.filter((a) => a.sharesOwned > 0).length}
         />
       </div>
@@ -419,8 +434,8 @@ export default function GuardianDashboard() {
         </div>
 
         <div className="flex flex-col xs:flex-row justify-between items-start xs:items-center text-xs mt-2 text-slate-600 font-medium gap-1">
-          <span>Current Moon Basis: <strong>${vault.moonCostBasisUsdc.toFixed(2)}</strong> ({currentMoonPct.toFixed(1)}%)</span>
-          <span className="text-amber-700 font-bold">Max Allowed: {maxMoonPct}% (${(vault.totalDepositedUsdc * (maxMoonPct / 100)).toFixed(2)})</span>
+          <span>Current Moon Basis: <strong>${moonCostBasis.toFixed(2)}</strong> ({currentMoonPct.toFixed(1)}%)</span>
+          <span className="text-amber-700 font-bold">Max Allowed: {maxMoonPct}% (${(totalDeposited * (maxMoonPct / 100)).toFixed(2)})</span>
         </div>
       </div>
 

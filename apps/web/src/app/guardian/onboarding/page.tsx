@@ -1,14 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useGuardianWallet } from '@/components/providers/PrivySolanaProvider';
 import { Button } from '@/components/ui/Button';
 import { Slider } from '@/components/ui/Slider';
 import { Pip } from '@/components/mascot/Pip';
 import { getBasketPresets, AnimalAvatar, AgeBand } from '@moonjar/shared';
-import { saveVault, VaultState } from '@/lib/store';
-import { RPC_URL, getNetworkLabel } from '@/lib/onchain';
+import { saveVault, getStoredVault, createDefaultVaultState, VaultState } from '@/lib/store';
+import { RPC_URL, getNetworkLabel, fetchAllOnChainVaults, OnChainVaultSummary } from '@/lib/onchain';
 import { PublicKey } from '@solana/web3.js';
 import { ShieldCheck, ArrowRight, Lock, Check, Loader2, AlertCircle } from 'lucide-react';
 
@@ -48,6 +48,43 @@ export default function OnboardingPage() {
 
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [existingVaults, setExistingVaults] = useState<OnChainVaultSummary[]>([]);
+  const [targetChildIndex, setTargetChildIndex] = useState<number>(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function checkExisting() {
+      if (!publicKey) return;
+      try {
+        const all = await fetchAllOnChainVaults();
+        const mine = all.filter((v) => v.guardian === publicKey.toBase58());
+        if (isMounted && mine.length > 0) {
+          setExistingVaults(mine);
+          setTargetChildIndex(mine.length);
+        }
+      } catch (err) {
+        console.warn('Could not check existing vaults:', err);
+      }
+    }
+    checkExisting();
+    return () => {
+      isMounted = false;
+    };
+  }, [publicKey]);
+
+  const handleRestoreExisting = (addr: string) => {
+    if (!publicKey) return;
+    const defaultState = getStoredVault(publicKey.toBase58()) || createDefaultVaultState(publicKey.toBase58(), addr);
+    saveVault({
+      ...defaultState,
+      metadata: {
+        ...defaultState.metadata,
+        vaultAddress: addr,
+        guardianWallet: publicKey.toBase58(),
+      },
+    });
+    router.push('/guardian/dashboard');
+  };
 
   const handleFinish = async () => {
     if (!authenticated) {
@@ -79,6 +116,7 @@ export default function OnboardingPage() {
         basket: basketEntries,
         unlockYears,
         initialDepositUsdc: initialDeposit > 0 ? initialDeposit : undefined,
+        childIndex: targetChildIndex,
       });
 
       const newVault: VaultState = {
@@ -128,11 +166,39 @@ export default function OnboardingPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-3 sm:px-0 py-6 sm:py-8">
+      {/* Existing Vault Alert */}
+      {existingVaults.length > 0 && (
+        <div className="mb-6 p-4 sm:p-5 rounded-3xl bg-indigo-50 border-3 border-indigo-400 shadow-sticker flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl sm:text-3xl">🎉</span>
+            <div>
+              <h4 className="font-display font-extrabold text-sm sm:text-base text-indigo-950">
+                Active Vault Detected on {getNetworkLabel()}!
+              </h4>
+              <p className="text-xs text-indigo-800 mt-0.5">
+                Vault <span className="font-mono font-bold">{existingVaults[0].address.slice(0, 6)}...{existingVaults[0].address.slice(-4)}</span> is already deployed on-chain for your connected guardian wallet.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => handleRestoreExisting(existingVaults[0].address)}
+              className="text-xs py-2 w-full sm:w-auto"
+            >
+              Open Dashboard →
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Progress header */}
       <div className="mb-6 sm:mb-8">
         <div className="flex items-center justify-between mb-2">
           <span className="font-display font-bold text-sm text-slate-500">
             Step {step} of 3
+            {existingVaults.length > 0 && ` (Adding Child #${existingVaults.length + 1})`}
           </span>
           <span className="font-display font-bold text-xs uppercase tracking-wider text-purple-700">
             {step === 1 ? "Child Profile" : step === 2 ? "Safety & Consent" : "Vault Setup"}

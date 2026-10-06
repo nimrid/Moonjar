@@ -11,7 +11,7 @@ export const PreStockTokenSchema = z.object({
   markValuation: z.number(),
   tokenPrice: z.number(),
   impliedValuation: z.number(),
-  supply: z.number(),
+  supply: z.number().nullable().optional(),
 });
 
 export type PreStockToken = z.infer<typeof PreStockTokenSchema>;
@@ -60,7 +60,7 @@ export interface BuyDecisionLog {
   vaultAddress: string;
   symbol: string;
   action: 'BUY' | 'SKIP';
-  premiumPct: number;
+  premiumPct?: number | null;
   amountInUsdc?: number;
   amountOutTokens?: number;
   machineReason: string;
