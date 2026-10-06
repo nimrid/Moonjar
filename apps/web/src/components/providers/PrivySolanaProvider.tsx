@@ -34,7 +34,8 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
 } from '@solana/spl-token';
 import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
-import { RPC_URL, MAINNET_USDC_MINT, getSolanaConnection } from '@/lib/onchain';
+import { RPC_URL, ACTIVE_USDC_MINT, getSolanaConnection } from '@/lib/onchain';
+import { getPreStockMint } from '@moonjar/shared';
 import {
   createDepositInstruction,
   createCreateVaultInstruction,
@@ -357,7 +358,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
 
       // 2. Fetch Circle USDC balance
       const ata = getAssociatedTokenAddressSync(
-        MAINNET_USDC_MINT,
+        ACTIVE_USDC_MINT,
         publicKey,
         true,
         TOKEN_PROGRAM_ID
@@ -483,13 +484,13 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
         // USDC (6 decimals)
         const amountUnits = Math.round(amount * 1_000_000);
         const fromAta = getAssociatedTokenAddressSync(
-          MAINNET_USDC_MINT,
+          ACTIVE_USDC_MINT,
           activePublicKey,
           true,
           TOKEN_PROGRAM_ID
         );
         const toAta = getAssociatedTokenAddressSync(
-          MAINNET_USDC_MINT,
+          ACTIVE_USDC_MINT,
           toPubkey,
           true,
           TOKEN_PROGRAM_ID
@@ -501,7 +502,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
             activePublicKey,
             toAta,
             toPubkey,
-            MAINNET_USDC_MINT,
+            ACTIVE_USDC_MINT,
             TOKEN_PROGRAM_ID
           )
         );
@@ -549,13 +550,13 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
 
       const amountLamports = Math.round(amountUsdc * 1_000_000);
       const depositorAta = getAssociatedTokenAddressSync(
-        MAINNET_USDC_MINT,
+        ACTIVE_USDC_MINT,
         activePublicKey,
         true,
         TOKEN_PROGRAM_ID
       );
       const saveJarAta = getAssociatedTokenAddressSync(
-        MAINNET_USDC_MINT,
+        ACTIVE_USDC_MINT,
         vaultPda,
         true,
         TOKEN_PROGRAM_ID
@@ -569,7 +570,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
           activePublicKey,
           depositorAta,
           activePublicKey,
-          MAINNET_USDC_MINT,
+          ACTIVE_USDC_MINT,
           TOKEN_PROGRAM_ID
         ),
         // Ensure Save Jar token account exists for the vault
@@ -577,7 +578,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
           activePublicKey,
           saveJarAta,
           vaultPda,
-          MAINNET_USDC_MINT,
+          ACTIVE_USDC_MINT,
           TOKEN_PROGRAM_ID
         )
       );
@@ -588,7 +589,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
         vault: vaultPda,
         saveJarToken: saveJarAta,
         depositorToken: depositorAta,
-        usdcMint: MAINNET_USDC_MINT,
+        usdcMint: ACTIVE_USDC_MINT,
         amount: BigInt(amountLamports),
       });
 
@@ -627,10 +628,11 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
 
       const unlockTs = BigInt(Math.floor(Date.now() / 1000) + unlockYears * 365 * 24 * 3600);
 
+      const isDevnet = RPC_URL.includes('devnet');
       const defaultBasket = [
-        { mint: new PublicKey('PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh'), weightBps: 4000 },
-        { mint: new PublicKey('PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB'), weightBps: 3500 },
-        { mint: new PublicKey('PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd'), weightBps: 2500 },
+        { mint: new PublicKey(getPreStockMint('SPACEX', isDevnet)), weightBps: 4000 },
+        { mint: new PublicKey(getPreStockMint('ANDURIL', isDevnet)), weightBps: 3500 },
+        { mint: new PublicKey(getPreStockMint('FIGUREAI', isDevnet)), weightBps: 2500 },
       ];
       const finalBasket = basket && basket.length > 0 ? basket : defaultBasket;
 
@@ -649,13 +651,13 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
       if (initialDepositUsdc && initialDepositUsdc > 0) {
         const amountLamports = Math.round(initialDepositUsdc * 1_000_000);
         const depositorAta = getAssociatedTokenAddressSync(
-          MAINNET_USDC_MINT,
+          ACTIVE_USDC_MINT,
           activePublicKey,
           true,
           TOKEN_PROGRAM_ID
         );
         const saveJarAta = getAssociatedTokenAddressSync(
-          MAINNET_USDC_MINT,
+          ACTIVE_USDC_MINT,
           vaultPda,
           true,
           TOKEN_PROGRAM_ID
@@ -665,7 +667,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
             activePublicKey,
             depositorAta,
             activePublicKey,
-            MAINNET_USDC_MINT,
+            ACTIVE_USDC_MINT,
             TOKEN_PROGRAM_ID
           ),
           createDepositInstruction({
@@ -673,7 +675,7 @@ function GuardianWalletInner({ children }: { children: ReactNode }) {
             vault: vaultPda,
             saveJarToken: saveJarAta,
             depositorToken: depositorAta,
-            usdcMint: MAINNET_USDC_MINT,
+            usdcMint: ACTIVE_USDC_MINT,
             amount: BigInt(amountLamports),
           })
         );

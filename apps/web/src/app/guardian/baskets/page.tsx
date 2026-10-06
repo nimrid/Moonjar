@@ -9,12 +9,15 @@ import { Slider } from '@/components/ui/Slider';
 import { PriceTagPill } from '@/components/ui/PriceTagPill';
 import { Pip } from '@/components/mascot/Pip';
 import { useGuardianWallet } from '@/components/providers/PrivySolanaProvider';
-import { BASKET_PRESETS, getPriceCheck, calculatePremiumPct } from '@moonjar/shared';
-import { fetchAllOnChainVaults, fetchOnChainVaultState } from '@/lib/onchain';
+import { getBasketPresets, getPreStockMint, getPriceCheck, calculatePremiumPct } from '@moonjar/shared';
+import { RPC_URL, fetchAllOnChainVaults, fetchOnChainVaultState } from '@/lib/onchain';
 import { PublicKey } from '@solana/web3.js';
 import { Check, AlertCircle, Save, Loader2, ExternalLink } from 'lucide-react';
 
 export default function BasketsPage() {
+  const isDevnet = RPC_URL.includes('devnet');
+  const basketPresets = getBasketPresets(isDevnet);
+
   const [vault, setVault] = useState<VaultState | null>(null);
   const [weights, setWeights] = useState<Record<string, number>>({});
   const [capPct, setCapPct] = useState(20);
@@ -143,7 +146,7 @@ export default function BasketsPage() {
   const isValidTotal = totalWeight === 100;
 
   const applyPreset = (presetId: string) => {
-    const preset = BASKET_PRESETS.find((p) => p.id === presetId);
+    const preset = basketPresets.find((p) => p.id === presetId);
     if (!preset) return;
     const newWeights: Record<string, number> = {};
     tokens.forEach((p) => {
@@ -186,13 +189,14 @@ export default function BasketsPage() {
           const item = getToken(sym);
           const existing = vault.allocations.find((a) => a.symbol === sym);
           const weightBps = Math.round(w * 100);
+          const mintAddress = getPreStockMint(sym, isDevnet);
           basketEntries.push({
-            mint: new PublicKey(item.contract_address),
+            mint: new PublicKey(mintAddress),
             weightBps,
           });
           return {
             symbol: sym,
-            mint: item.contract_address,
+            mint: mintAddress,
             weightBps,
             sharesOwned: existing ? existing.sharesOwned : 0,
             currentValueUsd: existing ? existing.currentValueUsd : 0,
@@ -286,7 +290,7 @@ export default function BasketsPage() {
       <div className="bg-white p-4 sm:p-6 rounded-3xl border-3 border-ink shadow-sticker space-y-4">
         <h2 className="text-base sm:text-lg font-bold font-display text-ink">Preset Baskets</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-          {BASKET_PRESETS.map((preset) => (
+          {basketPresets.map((preset) => (
             <div
               key={preset.id}
               className="p-3.5 sm:p-4 rounded-2xl border-2 border-ink bg-slate-50 flex flex-col justify-between"

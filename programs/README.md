@@ -9,17 +9,17 @@
 | Program | Program ID | Description |
 | :--- | :--- | :--- |
 | **`vault`** | `8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno` | Core child savings vault. All production deployments use this program. |
-| **`mock_swap`** | `C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE` | Offline SPL token swap harness. **Only used by `anchor test`.** Never deployed for real use. |
+| **`mock_swap`** | `C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE` | SPL token swap harness deployed to Devnet and loaded in `anchor test`. Enables real on-chain CPI swap execution when live Jupiter AMM pools are unavailable. |
 
 ### When is each program used?
 
-| Environment | `vault` deployed? | `mock_swap` deployed? | Swaps |
+| Environment | `vault` deployed? | `mock_swap` deployed? | Swaps Execution |
 | :--- | :--- | :--- | :--- |
-| **Surfpool (localnet)** | ✅ via `surfpool run deployment` | ✅ also deployed (but not used by keeper/web) | Live Jupiter CPI through mainnet fork |
-| **Devnet** | ✅ via `anchor deploy` | ✅ also deployed (but not used by keeper/web) | Jupiter called but no routes exist on devnet |
-| **`anchor test`** | ✅ compiled + loaded automatically | ✅ compiled + loaded automatically | `mock_swap` CPI (fixed-rate test pool) |
+| **Surfpool (localnet)** | ✅ via `surfpool run deployment` | ✅ deployed | Live Jupiter CPI through local mainnet fork |
+| **Devnet** | ✅ on-chain at `8Xi2Ty...` | ✅ on-chain at `C8cAUo...` | Keeper executes CPI to `mock_swap` pool |
+| **`anchor test`** | ✅ compiled + loaded automatically | ✅ compiled + loaded automatically | CPI to `mock_swap` test pool |
 
-The `mock_swap` program is only **invoked** inside `tests/vault.ts`. The keeper bot (`apps/keeper/src/index.ts`) and web app (`apps/web`) always call Jupiter directly and never reference `mock_swap`.
+On Mainnet and Surfpool, the keeper bot routes through **Jupiter Aggregator V6**. On Devnet, because private equity AMM pools only exist on Mainnet, the keeper executes swaps via CPI into **`mock_swap`**, transferring Circle Devnet USDC and receiving mock PreStock tokens.
 
 ---
 
@@ -86,16 +86,16 @@ anchor deploy --provider.cluster devnet
 
 ---
 
-## 🪙 Allowed PreStock Mints (Mainnet)
+## 🪙 Allowed PreStock Mints
 
-| Company | Mint Address |
-| :--- | :--- |
-| SpaceX | `PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh` |
-| Anduril | `PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB` |
-| Figure AI | `PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd` |
-| Anthropic | `Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw` |
-| OpenAI | `PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF` |
-| Kalshi | `PreLWGkkeqG1s4HEfFZSy9moCrJ7btsHuUtfcCeoRua` |
-| Polymarket | `Pre8AREmFPtoJFT8mQSXQLh56cwJmM7CFDRuoGBZiUP` |
+| Company | Mainnet Mint (Token-2022) | Devnet Mint (SPL Token) |
+| :--- | :--- | :--- |
+| **SpaceX** | `PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh` | `9Qz3LgX2xdwESk3J6MjCFKb6wU7dkRPMJjn12ZywTabm` |
+| **Anduril** | `PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB` | `J7aeMoZcfNru24tCYM1ruexgR54YCvSw8U5gaM4yPNUA` |
+| **Figure AI** | `PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd` | `8C2N9hyxbFfbiSUGSehFSq44FLyjS7NDqmHG83ojNE4b` |
+| **Anthropic** | `Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw` | `7WaJ2sDpv3ovXdi2F2Ebr9vhNbKFrmDn3weQVycWSGdu` |
+| **OpenAI** | `PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF` | `7dK84mWS4B1zoTLjKhR37rMWAi3PGLe5ADHDxdywPByE` |
+| **Kalshi** | `PreLWGkkeqG1s4HEfFZSy9moCrJ7btsHuUtfcCeoRua` | `5vVRURSQmgiD43Wdmu1xEgJESvmhUu7vGunB1uAN8oX9` |
+| **Polymarket** | `Pre8AREmFPtoJFT8mQSXQLh56cwJmM7CFDRuoGBZiUP` | `E9LmFmCLdbfkz5gt7SSmDoxWt8raCWiaAjXaCcA1XWze` |
 
-All are Token-2022 mints with 9 decimals. These mints exist on **Mainnet only**. On devnet and test-validator they do not exist — `init-cluster.ts` registers them in the config but the keeper will find no Jupiter routes.
+All tokens use 9 decimals. On Solana Devnet, the mints are created and funded to the Mock Swap pool by running `pnpm setup:devnet-prestocks`, which automatically calls `update_allowed_mints` on the vault's on-chain Config PDA.

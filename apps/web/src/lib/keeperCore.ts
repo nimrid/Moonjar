@@ -17,11 +17,13 @@ import {
 import {
   PRESTOCKS_LIST,
   PreStockToken,
+  PreStockTokenSchema,
   BuyDecisionLog,
   calculatePremiumPct,
   getPriceCheck,
   PRESTOCKS_DECIMALS,
   USDC_DECIMALS,
+  findPreStockToken,
 } from '@moonjar/shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -32,6 +34,12 @@ import {
   createExecuteBuyInstruction,
 } from './vault-client';
 import { RPC_URL } from './onchain';
+
+// BUG FIX: derive active USDC mint from RPC URL — devnet uses Circle's devnet USDC,
+// mainnet uses the real EPjFW... address. Using the wrong mint means Save Jar ATA
+// resolves to a non-existent account, always returning $0 balance.
+const DEVNET_USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
+const ACTIVE_USDC_MINT = RPC_URL.includes('devnet') ? DEVNET_USDC_MINT : MAINNET_USDC_MINT;
 
 /** Fetch with a hard timeout. Throws if the request takes longer than `ms` milliseconds. */
 async function fetchWithTimeout(url: string, options: RequestInit = {}, ms = 10_000): Promise<Response> {
@@ -110,8 +118,9 @@ export async function executeKeeperCycleForVault(
     }
 
     // Check Save Jar USDC Balance
+    // BUG FIX: use ACTIVE_USDC_MINT (devnet vs mainnet) so the ATA address is correct
     const saveJarAta = getAssociatedTokenAddressSync(
-      MAINNET_USDC_MINT,
+      ACTIVE_USDC_MINT,
       vaultPda,
       true,
       TOKEN_PROGRAM_ID
@@ -170,19 +179,27 @@ export async function executeKeeperCycleForVault(
     const candidate = basketEntries[Math.floor(Math.random() * basketEntries.length)];
     const candidateMint: PublicKey = candidate.mint;
 
-    // Fetch token metadata from prestocks
+    // Fetch token metadata from prestocks with Zod validation (MINOR-2 fix)
     let liveTokens: PreStockToken[] = PRESTOCKS_LIST;
     try {
       const res = await fetchWithTimeout('https://prestocks.com/api/prestocks');
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) liveTokens = data;
+        if (Array.isArray(data) && data.length > 0) {
+          // Validate each item; drop malformed entries rather than poisoning pricing
+          const validated = data.flatMap((item: unknown) => {
+            const result = PreStockTokenSchema.safeParse(item);
+            return result.success ? [result.data] : [];
+          });
+          if (validated.length > 0) liveTokens = validated;
+        }
       }
     } catch {}
 
-    const tokenMeta =
-      liveTokens.find((p) => p.contract_address === candidateMint.toBase58()) ||
-      PRESTOCKS_LIST.find((p) => p.contract_address === candidateMint.toBase58());
+    // BUG FIX: use findPreStockToken which resolves both devnet AND mainnet mint
+    // addresses, plus symbol lookup. The old contract_address-only search only
+    // matched mainnet mints, so devnet baskets always triggered UNKNOWN_TOKEN.
+    const tokenMeta = findPreStockToken(candidateMint.toBase58(), liveTokens);
 
     // L1: If the mint is unknown to both live and fallback lists, skip rather than
     // using stale hardcoded prices that could produce incorrect BUY/SKIP decisions.

@@ -61,36 +61,113 @@ export async function fetchLivePreStocks(): Promise<PreStockToken[]> {
   return raw.map((item) => PreStockTokenSchema.parse(item));
 }
 
-export const BASKET_PRESETS: BasketPreset[] = [
-  {
-    id: 'frontier-tech',
-    name: 'Frontier Tech',
-    description: 'Rockets, defense technology, and general-purpose humanoid robots.',
-    entries: [
-      { symbol: 'SPACEX', mint: 'PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh', weightBps: 4000 },
-      { symbol: 'ANDURIL', mint: 'PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB', weightBps: 3500 },
-      { symbol: 'FIGUREAI', mint: 'PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd', weightBps: 2500 },
-    ],
-  },
-  {
-    id: 'ai-frontier',
-    name: 'AI Frontier',
-    description: 'The leading research teams building helpful, ethical artificial intelligence.',
-    entries: [
-      { symbol: 'ANTHROPIC', mint: 'Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw', weightBps: 5000 },
-      { symbol: 'OPENAI', mint: 'PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF', weightBps: 5000 },
-    ],
-  },
-  {
-    id: 'prediction-markets',
-    name: 'Future Truth',
-    description: 'Information markets where people forecast real-world events and science.',
-    entries: [
-      { symbol: 'KALSHI', mint: 'PreLWGkkeqG1s4HEfFZSy9moCrJ7btsHuUtfcCeoRua', weightBps: 5000 },
-      { symbol: 'POLYMARKET', mint: 'Pre8AREmFPtoJFT8mQSXQLh56cwJmM7CFDRuoGBZiUP', weightBps: 5000 },
-    ],
-  },
-];
+export const DEVNET_PRESTOCKS_MINTS: Record<string, string> = {
+  SPACEX: '9Qz3LgX2xdwESk3J6MjCFKb6wU7dkRPMJjn12ZywTabm',
+  ANDURIL: 'J7aeMoZcfNru24tCYM1ruexgR54YCvSw8U5gaM4yPNUA',
+  FIGUREAI: '8C2N9hyxbFfbiSUGSehFSq44FLyjS7NDqmHG83ojNE4b',
+  ANTHROPIC: '7WaJ2sDpv3ovXdi2F2Ebr9vhNbKFrmDn3weQVycWSGdu',
+  OPENAI: '7dK84mWS4B1zoTLjKhR37rMWAi3PGLe5ADHDxdywPByE',
+  KALSHI: '5vVRURSQmgiD43Wdmu1xEgJESvmhUu7vGunB1uAN8oX9',
+  POLYMARKET: 'E9LmFmCLdbfkz5gt7SSmDoxWt8raCWiaAjXaCcA1XWze',
+};
+
+export const MAINNET_PRESTOCKS_MINTS: Record<string, string> = {
+  SPACEX: 'PreANxuXjsy2pvisWWMNB6YaJNzr7681wJJr2rHsfTh',
+  ANDURIL: 'PresTj4Yc2bAR197Er7wz4UUKSfqt6FryBEdAriBoQB',
+  FIGUREAI: 'PreZad18qfPtbxNpMtMuAuX2zVpvkEU8DnJx56faCWd',
+  ANTHROPIC: 'Pren1FvFX6J3E4kXhJuCiAD5aDmGEb7qJRncwA8Lkhw',
+  OPENAI: 'PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF',
+  KALSHI: 'PreLWGkkeqG1s4HEfFZSy9moCrJ7btsHuUtfcCeoRua',
+  POLYMARKET: 'Pre8AREmFPtoJFT8mQSXQLh56cwJmM7CFDRuoGBZiUP',
+  NEURALINK: 'PrekqLJvJ3qVdXmBGDiexvwUTF4rLFDa6HWS4HJbw9S',
+};
+
+export function isDevnetNetwork(): boolean {
+  if (typeof process !== 'undefined') {
+    if (process.env.NEXT_PUBLIC_SOLANA_NETWORK === 'devnet' || process.env.SOLANA_NETWORK === 'devnet') {
+      return true;
+    }
+    if (process.env.NEXT_PUBLIC_RPC_URL?.includes('devnet') || process.env.SOLANA_RPC_URL?.includes('devnet')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function getPreStockMint(symbol: string, isDevnet: boolean = isDevnetNetwork()): string {
+  if (isDevnet && DEVNET_PRESTOCKS_MINTS[symbol]) {
+    return DEVNET_PRESTOCKS_MINTS[symbol];
+  }
+  return MAINNET_PRESTOCKS_MINTS[symbol] || DEVNET_PRESTOCKS_MINTS[symbol] || '';
+}
+
+export function getBasketPresets(isDevnet: boolean = isDevnetNetwork()): BasketPreset[] {
+  return [
+    {
+      id: 'frontier-tech',
+      name: 'Frontier Tech',
+      description: 'Rockets, defense technology, and general-purpose humanoid robots.',
+      entries: [
+        { symbol: 'SPACEX', mint: getPreStockMint('SPACEX', isDevnet), weightBps: 4000 },
+        { symbol: 'ANDURIL', mint: getPreStockMint('ANDURIL', isDevnet), weightBps: 3500 },
+        { symbol: 'FIGUREAI', mint: getPreStockMint('FIGUREAI', isDevnet), weightBps: 2500 },
+      ],
+    },
+    {
+      id: 'ai-frontier',
+      name: 'AI Frontier',
+      description: 'The leading research teams building helpful, ethical artificial intelligence.',
+      entries: [
+        { symbol: 'ANTHROPIC', mint: getPreStockMint('ANTHROPIC', isDevnet), weightBps: 5000 },
+        { symbol: 'OPENAI', mint: getPreStockMint('OPENAI', isDevnet), weightBps: 5000 },
+      ],
+    },
+    {
+      id: 'prediction-markets',
+      name: 'Future Truth',
+      description: 'Information markets where people forecast real-world events and science.',
+      entries: [
+        { symbol: 'KALSHI', mint: getPreStockMint('KALSHI', isDevnet), weightBps: 5000 },
+        { symbol: 'POLYMARKET', mint: getPreStockMint('POLYMARKET', isDevnet), weightBps: 5000 },
+      ],
+    },
+  ];
+}
+
+/**
+ * BASKET_PRESETS is intentionally NOT exported as a frozen constant because
+ * `isDevnetNetwork()` reads process.env at import time — which is undefined
+ * in the browser, causing mainnet mints to always be used on the client.
+ *
+ * Always call `getBasketPresets(isDevnet)` directly and pass the isDevnet
+ * flag derived from your NEXT_PUBLIC_* env var.
+ *
+ * @deprecated Use getBasketPresets(isDevnet) instead.
+ */
+export const BASKET_PRESETS: BasketPreset[] = getBasketPresets();
+
+export function findPreStockToken(mintOrSymbol: string, tokens: PreStockToken[] = PRESTOCKS_LIST): PreStockToken | undefined {
+  const query = mintOrSymbol.toUpperCase();
+  const bySymbol = tokens.find((t) => t.symbol.toUpperCase() === query);
+  if (bySymbol) return bySymbol;
+
+  const byContract = tokens.find((t) => t.contract_address === mintOrSymbol);
+  if (byContract) return byContract;
+
+  for (const [sym, devMint] of Object.entries(DEVNET_PRESTOCKS_MINTS)) {
+    if (devMint === mintOrSymbol) {
+      return tokens.find((t) => t.symbol === sym) || PRESTOCKS_LIST.find((t) => t.symbol === sym);
+    }
+  }
+
+  for (const [sym, mainMint] of Object.entries(MAINNET_PRESTOCKS_MINTS)) {
+    if (mainMint === mintOrSymbol) {
+      return tokens.find((t) => t.symbol === sym) || PRESTOCKS_LIST.find((t) => t.symbol === sym);
+    }
+  }
+
+  return undefined;
+}
 
 export const PRESTOCKS_DECIMALS = 9;
 export const USDC_DECIMALS = 6;

@@ -15,9 +15,16 @@ See the root README for full setup (Surfpool / devnet / env vars).
 
 ---
 
-## Environment Variables
+## Environment Configuration
 
-Create `apps/web/.env.local`:
+Switch environments instantly from the monorepo root:
+
+```bash
+pnpm env:devnet     # Switch to Solana Devnet 🟡
+pnpm env:localnet   # Switch to Surfpool Localnet 🟢
+```
+
+Or manually configure `apps/web/.env.local`:
 
 ```env
 # Privy (get yours at https://privy.io)
@@ -27,11 +34,14 @@ PRIVY_APP_SECRET=<your_privy_app_secret>
 
 # Solana RPC
 # For Surfpool localnet:
-NEXT_PUBLIC_SOLANA_NETWORK=mainnet-beta
-NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8899
-# For devnet:
-# NEXT_PUBLIC_SOLANA_NETWORK=devnet
-# NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com
+# NEXT_PUBLIC_SOLANA_NETWORK=mainnet-beta
+# NEXT_PUBLIC_RPC_URL=http://127.0.0.1:8899
+# NEXT_PUBLIC_USDC_MINT=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+
+# For Devnet:
+NEXT_PUBLIC_SOLANA_NETWORK=devnet
+NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com
+NEXT_PUBLIC_USDC_MINT=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
 
 # Program ID (same on localnet and devnet)
 NEXT_PUBLIC_VAULT_PROGRAM_ID=8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno
@@ -40,7 +50,10 @@ NEXT_PUBLIC_VAULT_PROGRAM_ID=8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno
 KEEPER_API_SECRET=your_secret_here
 ```
 
-> When `NEXT_PUBLIC_SOLANA_NETWORK=devnet`, the app automatically switches the USDC mint to the Devnet USDC address (`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`). This is handled in [`src/lib/vault-client/constants.ts`](file:///Users/hng/Documents/antigravity/MoonJar/apps/web/src/lib/vault-client/constants.ts).
+### Cluster-Aware Mint Derivation
+
+- **USDC Mint:** The app uses [`ACTIVE_USDC_MINT`](file:///Users/hng/Documents/antigravity/MoonJar/apps/web/src/lib/onchain.ts), which dynamically selects Circle Devnet USDC (`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`) on Devnet and Mainnet USDC (`EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`) on Surfpool / Mainnet.
+- **PreStock Mints:** When onboarding a child or modifying basket allocations, the web app calls `getBasketPresets(isDevnet)` and `getPreStockMint(symbol, isDevnet)` to ensure on-chain vaults store cluster-valid mint accounts (`9Qz3Lg...`, `7WaJ2s...` on devnet vs `PreANx...`, `Pren1F...` on mainnet).
 
 ---
 

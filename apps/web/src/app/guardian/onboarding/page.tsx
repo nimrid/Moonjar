@@ -6,7 +6,7 @@ import { useGuardianWallet } from '@/components/providers/PrivySolanaProvider';
 import { Button } from '@/components/ui/Button';
 import { Slider } from '@/components/ui/Slider';
 import { Pip } from '@/components/mascot/Pip';
-import { BASKET_PRESETS, AnimalAvatar, AgeBand } from '@moonjar/shared';
+import { getBasketPresets, AnimalAvatar, AgeBand } from '@moonjar/shared';
 import { saveVault, VaultState } from '@/lib/store';
 import { RPC_URL, getNetworkLabel } from '@/lib/onchain';
 import { PublicKey } from '@solana/web3.js';
@@ -25,6 +25,9 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { publicKey, connected, authenticated, login, createVault } = useGuardianWallet();
 
+  const isDevnet = RPC_URL.includes('devnet');
+  const basketPresets = getBasketPresets(isDevnet);
+
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // Step 1: Identity
@@ -40,7 +43,7 @@ export default function OnboardingPage() {
   // Step 3: Vault Settings
   const [moonCapBps, setMoonCapBps] = useState(2000); // 20%
   const [initialDeposit, setInitialDeposit] = useState(25);
-  const [selectedBasket, setSelectedBasket] = useState(BASKET_PRESETS[0].id);
+  const [selectedBasket, setSelectedBasket] = useState(basketPresets[0].id);
   const [unlockYears, setUnlockYears] = useState(10); // 10 years until 18
 
   const [isCreating, setIsCreating] = useState(false);
@@ -61,7 +64,7 @@ export default function OnboardingPage() {
     setIsCreating(true);
     setCreateError(null);
 
-    const preset = BASKET_PRESETS.find((b) => b.id === selectedBasket) || BASKET_PRESETS[0];
+    const preset = basketPresets.find((b) => b.id === selectedBasket) || basketPresets[0];
 
     try {
       const basketEntries = preset.entries.map((e) => ({
@@ -340,7 +343,7 @@ export default function OnboardingPage() {
                 Choose Initial Investment Basket
               </label>
               <div className="space-y-2">
-                {BASKET_PRESETS.map((preset) => (
+                {basketPresets.map((preset) => (
                   <button
                     key={preset.id}
                     type="button"

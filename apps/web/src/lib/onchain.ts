@@ -8,6 +8,7 @@ import {
   PRESTOCKS_LIST,
   PreStockToken,
   USDC_DECIMALS,
+  findPreStockToken,
 } from '@moonjar/shared';
 import { VaultState } from './store';
 import {
@@ -21,6 +22,13 @@ export { PROGRAM_ID, MAINNET_USDC_MINT };
 
 export const RPC_URL =
   process.env.NEXT_PUBLIC_RPC_URL || 'http://127.0.0.1:8899';
+
+// BUG FIX: derive active USDC mint from RPC URL so Save Jar ATA lookups use
+// the correct address on each network. Devnet uses Circle's devnet USDC.
+const DEVNET_USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
+export const ACTIVE_USDC_MINT: PublicKey = RPC_URL.includes('devnet')
+  ? DEVNET_USDC_MINT
+  : MAINNET_USDC_MINT;
 
 export function getSolanaConnection(): Connection {
   return new Connection(RPC_URL, 'confirmed');
@@ -104,8 +112,9 @@ export async function fetchOnChainVaultState(
     if (!vaultAccount) return null;
 
     // 2. Fetch Save Jar (USDC) ATA
+    // BUG FIX: use ACTIVE_USDC_MINT so the ATA address is correct on devnet
     const saveJarAta = getAssociatedTokenAddressSync(
-      MAINNET_USDC_MINT,
+      ACTIVE_USDC_MINT,
       vaultPubkey,
       true,
       TOKEN_PROGRAM_ID
@@ -126,9 +135,7 @@ export async function fetchOnChainVaultState(
       const mintPubkey = entry.mint;
       const mintStr = mintPubkey.toBase58();
 
-      const tokenMeta =
-        liveTokens.find((t) => t.contract_address === mintStr) ||
-        PRESTOCKS_LIST.find((t) => t.contract_address === mintStr);
+      const tokenMeta = findPreStockToken(mintStr, liveTokens);
 
       const symbol = tokenMeta ? tokenMeta.symbol : mintStr.slice(0, 6);
       const price = tokenMeta ? tokenMeta.tokenPrice : 0;

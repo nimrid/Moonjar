@@ -19,16 +19,22 @@ import {
 import {
   PRESTOCKS_LIST,
   PreStockToken,
+  PreStockTokenSchema,
   BuyDecisionLog,
   calculatePremiumPct,
   getPriceCheck,
+  findPreStockToken,
 } from '@moonjar/shared';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 import vaultIdl from '../../../target/idl/vault.json';
 
 dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 /** Fetch with a hard timeout. Throws if the request takes longer than `ms` ms. */
 async function fetchWithTimeout(url: string, options: RequestInit = {}, ms = 10_000): Promise<Response> {
@@ -42,8 +48,13 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, ms = 10_
 }
 
 const MAINNET_USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+const DEVNET_USDC_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
+const MOCK_SWAP_PROGRAM_ID = new PublicKey('C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE');
+
 const RPC_URL = process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899';
 const PROGRAM_ID = new PublicKey(process.env.VAULT_PROGRAM_ID || '8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno');
+
+const ACTIVE_USDC_MINT = RPC_URL.includes('devnet') ? DEVNET_USDC_MINT : MAINNET_USDC_MINT;
 
 let liveTokens: PreStockToken[] = PRESTOCKS_LIST;
 
@@ -51,10 +62,18 @@ async function refreshLiveTokens() {
   try {
     const res = await fetchWithTimeout('https://prestocks.com/api/prestocks');
     if (res.ok) {
-      const data: any = await res.json();
+      const data: unknown = await res.json();
       if (Array.isArray(data) && data.length > 0) {
-        liveTokens = data;
-        console.log(`[Keeper] 📡 Synced ${liveTokens.length} live PreStocks from prestocks.com`);
+        // MINOR-2 FIX: validate each entry so a malformed API response can't
+        // poison downstream price calculations with NaN / unexpected shapes.
+        const validated = data.flatMap((item: unknown) => {
+          const result = PreStockTokenSchema.safeParse(item);
+          return result.success ? [result.data] : [];
+        });
+        if (validated.length > 0) {
+          liveTokens = validated;
+          console.log(`[Keeper] 📡 Synced ${liveTokens.length} live PreStocks from prestocks.com`);
+        }
       }
     }
   } catch {
@@ -88,6 +107,9 @@ export async function evaluateOnChainVault(
   vaultData: any
 ): Promise<BuyDecisionLog | null> {
   const nickname = `ChildVault #${vaultData.childIndex.toString()}`;
+  // MINOR-3 FIX: snapshot module-global liveTokens into a local const so that
+  // a concurrent refreshLiveTokens() call can't mutate it mid-evaluation.
+  const tokens = liveTokens;
   console.log(`\n======================================================`);
   console.log(`[Keeper] 🍯 Evaluating On-Chain Vault: ${vaultPda.toBase58().slice(0, 8)}... (${nickname})`);
 
@@ -101,7 +123,7 @@ export async function evaluateOnChainVault(
   }
 
   // 1. Fetch Save Jar Token Account Balance
-  const saveJarAta = getAssociatedTokenAddressSync(MAINNET_USDC_MINT, vaultPda, true, TOKEN_PROGRAM_ID);
+  const saveJarAta = getAssociatedTokenAddressSync(ACTIVE_USDC_MINT, vaultPda, true, TOKEN_PROGRAM_ID);
   let saveBalanceUsdc = 0;
   try {
     const bal = await connection.getTokenAccountBalance(saveJarAta);
@@ -147,10 +169,8 @@ export async function evaluateOnChainVault(
   const candidate = basketEntries[Math.floor(Math.random() * basketEntries.length)];
   const candidateMint: PublicKey = candidate.mint;
 
-  // Find token metadata — skip if unknown to avoid stale-price decisions
-  const tokenMeta =
-    liveTokens.find((p) => p.contract_address === candidateMint.toBase58()) ||
-    PRESTOCKS_LIST.find((p) => p.contract_address === candidateMint.toBase58());
+  // Find token metadata via findPreStockToken (supports both devnet and mainnet mints)
+  const tokenMeta = findPreStockToken(candidateMint.toBase58(), tokens);
 
   if (!tokenMeta) {
     console.log(`  ⚠️ Unknown mint ${candidateMint.toBase58().slice(0, 8)}... — skipping to avoid stale pricing.`);
@@ -167,22 +187,80 @@ export async function evaluateOnChainVault(
   const tradeAmountLamports = Math.floor(tradeAmountUsdc * 1_000_000);
   console.log(`  Querying Jupiter for $${tradeAmountUsdc.toFixed(2)} USDC -> ${tokenMeta.symbol}...`);
 
+  const isDevnet = RPC_URL.includes('devnet');
   let quoteRes: any = null;
-  try {
-    const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${MAINNET_USDC_MINT.toBase58()}&outputMint=${candidateMint.toBase58()}&amount=${tradeAmountLamports}&onlyDirectRoutes=true&slippageBps=200`;
-    quoteRes = await fetchWithTimeout(quoteUrl).then((r) => r.json());
-  } catch (err) {
-    console.error(`  ❌ Failed to fetch quote from Jupiter API:`, err);
+  let swapProgramId: PublicKey = MOCK_SWAP_PROGRAM_ID;
+  let cpiData: Buffer = Buffer.alloc(0);
+  let remainingAccounts: any[] = [];
+  let lookupTableAccounts: AddressLookupTableAccount[] = [];
+
+  // Ensure Moon Jar ATA exists (detect Token-2022 vs legacy Token program dynamically)
+  const mintInfo = await connection.getAccountInfo(candidateMint);
+  if (!mintInfo) {
+    console.log(`  ⚠️ Mint ${candidateMint.toBase58().slice(0, 8)}... does not exist on this cluster. Skipping.`);
     return null;
   }
+  const tokenOutProgram = mintInfo.owner.equals(TOKEN_2022_PROGRAM_ID)
+    ? TOKEN_2022_PROGRAM_ID
+    : TOKEN_PROGRAM_ID;
+  const moonJarTokenAta = getAssociatedTokenAddressSync(candidateMint, vaultPda, true, tokenOutProgram);
+  await createAssociatedTokenAccountIdempotent(
+    connection,
+    keeper,
+    candidateMint,
+    vaultPda,
+    {},
+    tokenOutProgram,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+    true
+  );
 
-  if (!quoteRes || !quoteRes.outAmount) {
-    console.log(`  ⚠️ No swap route available for ${tokenMeta.symbol}. Skipping.`);
-    return null;
+  if (isDevnet) {
+    console.log(`  [Devnet Mode] Simulating quote and routing through mock_swap program...`);
+    const tokensOut = tradeAmountUsdc / tokenMeta.tokenPrice;
+    const outAmountBase = Math.floor(tokensOut * 1e9);
+    quoteRes = {
+      outAmount: outAmountBase.toString(),
+      otherAmountThreshold: Math.floor(outAmountBase * 0.98).toString(),
+    };
+    swapProgramId = MOCK_SWAP_PROGRAM_ID;
+
+    const swapSighash = createHash('sha256').update('global:swap').digest().subarray(0, 8);
+    cpiData = Buffer.concat([
+      swapSighash,
+      new BN(tradeAmountLamports).toArrayLike(Buffer, 'le', 8),
+      new BN(outAmountBase).toArrayLike(Buffer, 'le', 8),
+    ]);
+
+    const [mockSwapPoolPda] = PublicKey.findProgramAddressSync([Buffer.from('mock_swap_pool')], MOCK_SWAP_PROGRAM_ID);
+    const mockPoolUsdcAta = getAssociatedTokenAddressSync(DEVNET_USDC_MINT, mockSwapPoolPda, true);
+    const mockPoolTokenAta = getAssociatedTokenAddressSync(candidateMint, mockSwapPoolPda, true);
+
+    remainingAccounts = [
+      { pubkey: vaultPda, isWritable: false, isSigner: false },
+      { pubkey: saveJarAta, isWritable: true, isSigner: false },
+      { pubkey: moonJarTokenAta, isWritable: true, isSigner: false },
+      { pubkey: mockSwapPoolPda, isWritable: false, isSigner: false },
+      { pubkey: mockPoolUsdcAta, isWritable: true, isSigner: false },
+      { pubkey: mockPoolTokenAta, isWritable: true, isSigner: false },
+      { pubkey: TOKEN_PROGRAM_ID, isWritable: false, isSigner: false },
+    ];
+  } else {
+    try {
+      const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${MAINNET_USDC_MINT.toBase58()}&outputMint=${candidateMint.toBase58()}&amount=${tradeAmountLamports}&onlyDirectRoutes=true&slippageBps=200`;
+      quoteRes = await fetchWithTimeout(quoteUrl).then((r) => r.json());
+    } catch (err) {
+      console.error(`  ❌ Failed to fetch quote from Jupiter API:`, err);
+      return null;
+    }
+
+    if (!quoteRes || !quoteRes.outAmount) {
+      console.log(`  ⚠️ No swap route available for ${tokenMeta.symbol}. Skipping.`);
+      return null;
+    }
   }
 
   // 5. Calculate Valuation & Premium
-  // SpaceX has 9 decimals on mainnet
   const tokensOut = Number(quoteRes.outAmount) / 1e9;
   const executionPrice = tradeAmountUsdc / tokensOut;
   const premium = calculatePremiumPct(executionPrice, tokenMeta.markPrice);
@@ -215,84 +293,76 @@ export async function evaluateOnChainVault(
     console.log(`  ⚡ --force-buy flag detected: Overriding safety ceiling for test verification (${premium.toFixed(2)}%).`);
   }
 
-  // 6. Execute On-Chain Buy via Jupiter CPI
+  // 6. Execute On-Chain Buy via CPI
   console.log(`  ✅ Price Check Passed: ${priceCheck.tag}`);
-  console.log(`  🚀 Fetching Jupiter swap instruction for execution...`);
 
-  try {
-    const swapInsRes: any = await fetchWithTimeout(
-      'https://api.jup.ag/swap/v1/swap-instructions',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          quoteResponse: quoteRes,
-          userPublicKey: vaultPda.toBase58(),
-        }),
+  if (!isDevnet) {
+    console.log(`  🚀 Fetching Jupiter swap instruction for execution...`);
+    try {
+      const swapInsRes: any = await fetchWithTimeout(
+        'https://api.jup.ag/swap/v1/swap-instructions',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            quoteResponse: quoteRes,
+            userPublicKey: vaultPda.toBase58(),
+          }),
+        }
+      ).then((r) => r.json());
+
+      const { swapInstruction, addressLookupTableAddresses } = swapInsRes;
+      if (!swapInstruction) {
+        console.error(`  ❌ Failed to obtain swapInstruction from Jupiter.`);
+        return null;
       }
-    ).then((r) => r.json());
 
-    const { swapInstruction, addressLookupTableAddresses } = swapInsRes;
-    if (!swapInstruction) {
-      console.error(`  ❌ Failed to obtain swapInstruction from Jupiter.`);
+      swapProgramId = new PublicKey(swapInstruction.programId);
+      cpiData = Buffer.from(swapInstruction.data, 'base64');
+
+      remainingAccounts = swapInstruction.accounts.map((acc: any) => ({
+        pubkey: new PublicKey(acc.pubkey),
+        isWritable: acc.isWritable,
+        isSigner: false,
+      }));
+
+      lookupTableAccounts = await Promise.all(
+        (addressLookupTableAddresses || []).map(async (address: string) => {
+          const res = await connection.getAddressLookupTable(new PublicKey(address));
+          return res.value;
+        })
+      ).then((tables) => tables.filter((t): t is AddressLookupTableAccount => t !== null));
+    } catch (err) {
+      console.error(`  ❌ Error obtaining Jupiter swap instruction:`, err);
       return null;
     }
+  }
 
-    const jupProgramId = new PublicKey(swapInstruction.programId);
-    const cpiData = Buffer.from(swapInstruction.data, 'base64');
-
-    // Outer transaction: vault is signer in inner CPI, not in outer envelope
-    const remainingAccounts = swapInstruction.accounts.map((acc: any) => ({
-      pubkey: new PublicKey(acc.pubkey),
-      isWritable: acc.isWritable,
-      isSigner: false,
-    }));
-
-    // Ensure Moon Jar Token-2022 ATA exists
-    const moonJarTokenAta = getAssociatedTokenAddressSync(candidateMint, vaultPda, true, TOKEN_2022_PROGRAM_ID);
-    await createAssociatedTokenAccountIdempotent(
-      connection,
-      keeper,
+  try {
+    console.log(`  Submitting on-chain execute_buy to MoonJar...`);
+  const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({ units: 800_000 });
+  const ix = await vaultProgram.methods
+    .executeBuy(
       candidateMint,
-      vaultPda,
-      {},
-      TOKEN_2022_PROGRAM_ID,
-      ASSOCIATED_TOKEN_PROGRAM_ID,
-      true
-    );
-
-    // Fetch address lookup table accounts to prevent transaction size overflow
-    const lookupTableAccounts = await Promise.all(
-      (addressLookupTableAddresses || []).map(async (address: string) => {
-        const res = await connection.getAddressLookupTable(new PublicKey(address));
-        return res.value;
-      })
-    ).then((tables) => tables.filter((t): t is AddressLookupTableAccount => t !== null));
-
-    console.log(`  Submitting on-chain execute_buy to MoonJar (VersionedTransaction V0)...`);
-    const modifyComputeUnits = ComputeBudgetProgram.setComputeUnitLimit({ units: 800_000 });
-    const ix = await vaultProgram.methods
-      .executeBuy(
-        candidateMint,
-        new BN(tradeAmountLamports),
-        new BN(quoteRes.outAmount),
-        new BN(quoteRes.otherAmountThreshold),
-        cpiData
-      )
-      .accounts({
-        keeper: keeper.publicKey,
-        config: configPda,
-        vault: vaultPda,
-        saveJarToken: saveJarAta,
-        moonJarToken: moonJarTokenAta,
-        usdcMint: MAINNET_USDC_MINT,
-        mintOut: candidateMint,
-        swapProgram: jupProgramId,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        tokenOutProgram: TOKEN_2022_PROGRAM_ID,
-      })
-      .remainingAccounts(remainingAccounts)
-      .instruction();
+      new BN(tradeAmountLamports),
+      new BN(quoteRes.outAmount),
+      new BN(quoteRes.otherAmountThreshold),
+      cpiData
+    )
+    .accounts({
+      keeper: keeper.publicKey,
+      config: configPda,
+      vault: vaultPda,
+      saveJarToken: saveJarAta,
+      moonJarToken: moonJarTokenAta,
+      usdcMint: ACTIVE_USDC_MINT,
+      mintOut: candidateMint,
+      swapProgram: swapProgramId,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      tokenOutProgram: tokenOutProgram,
+    })
+    .remainingAccounts(remainingAccounts)
+    .instruction();
 
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
     const messageV0 = new TransactionMessage({
@@ -382,7 +452,9 @@ async function runKeeper() {
   }
 }
 
-runKeeper().catch((err) => {
-  console.error('[Keeper Fatal Error]', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  runKeeper().catch((err) => {
+    console.error('[Keeper Fatal Error]', err);
+    process.exit(1);
+  });
+}

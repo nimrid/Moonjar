@@ -50,6 +50,22 @@ pub mod vault {
         Ok(())
     }
 
+    pub fn update_allowed_mints(
+        ctx: Context<UpdateConfig>,
+        allowed_mints: Vec<Pubkey>,
+    ) -> Result<()> {
+        require!(allowed_mints.len() <= MAX_ALLOWED_MINTS, ErrorCode::TooManyAllowedMints);
+        let config = &mut ctx.accounts.config;
+        let mut mint_array = [Pubkey::default(); MAX_ALLOWED_MINTS];
+        for (i, m) in allowed_mints.iter().enumerate() {
+            mint_array[i] = *m;
+        }
+        config.allowed_mints = mint_array;
+        config.allowed_count = allowed_mints.len() as u8;
+        msg!("Config allowed mints updated: count={}", config.allowed_count);
+        Ok(())
+    }
+
     pub fn create_vault(
         ctx: Context<CreateVault>,
         child_index: u64,
@@ -464,6 +480,21 @@ pub struct InitConfig<'info> {
 }
 
 #[derive(Accounts)]
+pub struct UpdateConfig<'info> {
+    #[account(
+        constraint = admin.key() == config.admin @ ErrorCode::Unauthorized
+    )]
+    pub admin: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump = config.bump
+    )]
+    pub config: Account<'info, Config>,
+}
+
+#[derive(Accounts)]
 #[instruction(child_index: u64)]
 pub struct CreateVault<'info> {
     #[account(mut)]
@@ -647,7 +678,7 @@ pub struct FundMatchPool<'info> {
         seeds = [b"config"],
         bump = config.bump
     )]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
 
     #[account(
         seeds = [b"match_pool"],
@@ -661,13 +692,13 @@ pub struct FundMatchPool<'info> {
         associated_token::mint = usdc_mint,
         associated_token::authority = match_pool,
     )]
-    pub match_pool_token: Account<'info, TokenAccount>,
+    pub match_pool_token: Box<Account<'info, TokenAccount>>,
 
     #[account(mut)]
-    pub funder_token: Account<'info, TokenAccount>,
+    pub funder_token: Box<Account<'info, TokenAccount>>,
 
     #[account(address = config.usdc_mint)]
-    pub usdc_mint: Account<'info, Mint>,
+    pub usdc_mint: Box<Account<'info, Mint>>,
 
     pub token_program: Program<'info, Token>,
 }
@@ -680,7 +711,7 @@ pub struct Withdraw<'info> {
         seeds = [b"config"],
         bump = config.bump
     )]
-    pub config: Account<'info, Config>,
+    pub config: Box<Account<'info, Config>>,
 
     #[account(
         mut,
@@ -688,21 +719,21 @@ pub struct Withdraw<'info> {
         seeds = [b"vault", guardian.key().as_ref(), &vault.child_index.to_le_bytes()],
         bump = vault.bump
     )]
-    pub vault: Account<'info, ChildVault>,
+    pub vault: Box<Account<'info, ChildVault>>,
 
     #[account(
         mut,
         constraint = vault_token.owner == vault.key()
     )]
-    pub vault_token: InterfaceAccount<'info, InterfaceTokenAccount>,
+    pub vault_token: Box<InterfaceAccount<'info, InterfaceTokenAccount>>,
 
     #[account(
         mut,
         constraint = guardian_token.owner == guardian.key()
     )]
-    pub guardian_token: InterfaceAccount<'info, InterfaceTokenAccount>,
+    pub guardian_token: Box<InterfaceAccount<'info, InterfaceTokenAccount>>,
 
-    pub mint: InterfaceAccount<'info, InterfaceMint>,
+    pub mint: Box<InterfaceAccount<'info, InterfaceMint>>,
 
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -869,4 +900,6 @@ pub enum ErrorCode {
     BalanceDeltaInvalid,
     #[msg("Too many allowed mints provided")]
     TooManyAllowedMints,
+    #[msg("Caller is unauthorized")]
+    Unauthorized,
 }

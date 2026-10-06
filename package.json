@@ -11,8 +11,12 @@
     "start": "pnpm --parallel --filter @moonjar/web --filter @moonjar/keeper run start",
     "test": "pnpm --recursive run test",
     "test:spike": "tsx scripts/spike.ts",
+    "test:devnet-trade": "tsx scripts/test-devnet-trade.ts",
     "init-cluster": "tsx scripts/init-cluster.ts",
+    "setup:devnet-prestocks": "tsx scripts/setup-devnet-prestocks.ts",
     "fund": "tsx scripts/fund.ts",
+    "env:devnet": "cp .env.devnet .env && cp .env.devnet apps/web/.env.local && cp .env.devnet apps/keeper/.env && echo 'Switched to Solana Devnet 🟡'",
+    "env:localnet": "cp .env.localnet .env && cp .env.localnet apps/web/.env.local && cp .env.localnet apps/keeper/.env && echo 'Switched to Surfpool Localnet 🟢'",
     "lint": "pnpm --recursive run lint"
   },
   "devDependencies": {

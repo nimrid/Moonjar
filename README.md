@@ -39,11 +39,20 @@ An autonomous **Keeper bot** continuously evaluates live Jupiter DEX quotes agai
 
 ## 🏗️ Three Ways to Run It
 
-| Mode | What runs | Real Jupiter swaps? | USDC mint used | Who uses it |
+| Mode | What runs | Swaps execution | USDC mint used | Who uses it |
 | :--- | :--- | :--- | :--- | :--- |
-| **Surfpool (localnet)** | Surfpool forks mainnet on-demand at `127.0.0.1:8899` | ✅ Yes (fork of mainnet pools) | Mainnet USDC (`EPjFWdd5...`) | Local developers |
-| **Devnet** | Solana public devnet RPC | ❌ No (no real PreStock pools exist on devnet) | Devnet USDC (`4zMMC9...`) | Remote developers/CI |
-| **Anchor unit tests** | `solana-test-validator` (blank ledger, in-process) | ❌ No (uses `mock_swap` CPI harness) | Test mint (created in-test) | Rust/program developers |
+| **Surfpool (localnet)** | Surfpool forks mainnet on-demand at `127.0.0.1:8899` | ✅ Real Jupiter CPI (fork of mainnet pools) | Mainnet USDC (`EPjFWdd5...`) | Local developers |
+| **Devnet** | Solana public devnet RPC | ✅ Real on-chain CPI via `mock_swap` pool (`C8cAUo...`) | Devnet Circle USDC (`4zMMC9...`) | Remote developers / staging |
+| **Anchor unit tests** | `solana-test-validator` (blank ledger, in-process) | ✅ Offline CPI via `mock_swap` harness | Test mint (created in-test) | Rust/program developers |
+
+### ⚡ Quick Environment Switch
+
+Switch all workspace apps (`.env`, `apps/web/.env.local`, `apps/keeper/.env`) with a single command:
+
+```bash
+pnpm env:devnet     # Switch to Solana Devnet 🟡
+pnpm env:localnet   # Switch to Surfpool Localnet 🟢
+```
 
 ---
 
@@ -52,25 +61,28 @@ An autonomous **Keeper bot** continuously evaluates live Jupiter DEX quotes agai
 ```
 MoonJar/
 ├── apps/
-│   ├── web/             # Next.js 14 app — Guardian Suite + Child Portal
-│   └── keeper/          # Autonomous Keeper bot (reads SOLANA_RPC_URL, fires Jupiter swaps)
+│   ├── web/                     # Next.js 14 app — Guardian Suite + Child Portal
+│   └── keeper/                  # Autonomous Keeper daemon (Jupiter on mainnet, mock_swap on devnet)
 ├── packages/
-│   └── shared/          # Zod types, PreStocks registry, Flesch-Kincaid linters
+│   └── shared/                  # Zod types, PreStocks registry (devnet + mainnet), reading linters
 ├── programs/
-│   ├── vault/           # Anchor program: ChildVault PDA, cost-basis caps, Jupiter CPI
-│   └── mock-swap/       # Offline test-only CPI harness (only used by anchor test)
+│   ├── vault/                   # Anchor program: ChildVault PDA, cost-basis caps, swap CPI
+│   └── mock-swap/               # CPI swap program on Devnet & Anchor tests (C8cAUo...)
 ├── runbooks/
-│   └── deployment/      # Surfpool Infrastructure-as-Code runbook (deploys both programs instantly)
+│   └── deployment/              # Surfpool IaC runbook (deploys programs to localnet fork)
 ├── scripts/
-│   ├── fund.ts          # Surfpool cheatcode: airdrop 5 SOL + set USDC balance (localnet only)
-│   └── init-cluster.ts  # Initialises on-chain Config PDA (works on localnet AND devnet)
+│   ├── fund.ts                  # Surfpool cheatcode: airdrop 5 SOL + set USDC balance (localnet only)
+│   ├── init-cluster.ts          # Initialises on-chain Config PDA (works on localnet AND devnet)
+│   ├── setup-devnet-prestocks.ts # Creates mock PreStock tokens & funds Devnet swap pool
+│   └── test-devnet-trade.ts     # End-to-end automated on-chain buy test on Devnet
 ├── tests/
-│   └── vault.ts         # Anchor integration tests — use mock_swap, run on blank test-validator
-├── Anchor.toml          # Same program IDs on both localnet and devnet
-└── package.json         # pnpm 9 workspace root
+│   └── vault.ts                 # Anchor integration tests — runs against test-validator
+├── Anchor.toml                  # Program IDs registered for localnet and devnet
+├── .env.example                 # Safe environment template without secrets
+└── package.json                 # pnpm 9 workspace root
 ```
 
-> **Key point**: `mock_swap` is only referenced in `tests/vault.ts`. The keeper bot and web app always talk to Jupiter directly. You never need to deploy `mock_swap` unless you're running `anchor test`.
+> **Key point**: On Mainnet/Surfpool, the keeper bot routes trades through **Jupiter Aggregator V6**. On Devnet, real AMM liquidity pools for private equity tokens do not exist, so the keeper routes through our deployed on-chain **`mock_swap`** program (`C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE`) and mock PreStock tokens. Both pathways execute real on-chain CPIs into the vault program.
 
 ---
 
@@ -194,65 +206,74 @@ Open [http://localhost:3000](http://localhost:3000). Log in via Privy, create a 
 
 ## 🟡 Option B — Devnet
 
-Use this when you want to test without Surfpool and don't need live Jupiter swap execution.
+Run Moonjar against Solana's public Devnet with mock SPL PreStock tokens and the deployed `mock_swap` pool program. This allows full end-to-end testing of the web app, vault creation, deposits, withdrawals, and **autonomous keeper execution** on a public Solana cluster.
 
-> **Important**: Real PreStock Token-2022 mints and their AMM liquidity pools (Meteora DLMM, Raydium) only exist on **Mainnet**. On Devnet the keeper's Jupiter quote call will return no routes, so it will skip buys with `No swap route available`. The web app, vault creation, deposits, and withdrawals all work normally — only keeper swap execution won't produce real trades.
+### Step 1 — Switch to Devnet configuration
 
-### Step 1 — Configure environment for devnet
+Run the switch script to automatically update your `.env`, `apps/web/.env.local`, and `apps/keeper/.env`:
 
-```env
-NEXT_PUBLIC_SOLANA_NETWORK=devnet
-NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com
-SOLANA_RPC_URL=https://api.devnet.solana.com
-
-NEXT_PUBLIC_VAULT_PROGRAM_ID=8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno
-
-NEXT_PUBLIC_PRIVY_APP_ID=<your_privy_app_id>
-PRIVY_APP_ID=<your_privy_app_id>
-PRIVY_APP_SECRET=<your_privy_app_secret>
-KEEPER_API_SECRET=your_secret_here
+```bash
+pnpm env:devnet
 ```
 
-### Step 2 — Deploy programs to devnet
+This configures:
+- `NEXT_PUBLIC_SOLANA_NETWORK=devnet`
+- `NEXT_PUBLIC_RPC_URL=https://api.devnet.solana.com`
+- `NEXT_PUBLIC_USDC_MINT=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` (Circle Devnet USDC)
+- `NEXT_PUBLIC_VAULT_PROGRAM_ID=8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno`
 
-The same program IDs used on localnet are also registered for devnet in `Anchor.toml`:
+### Step 2 — (Already Deployed) Program IDs on Devnet
 
-```toml
-[programs.devnet]
-vault    = "8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno"
-mock_swap = "C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE"
-```
+Both programs are already compiled, deployed, and verified on Solana Devnet:
 
-Deploy with:
+| Program | Program ID | Notes |
+| :--- | :--- | :--- |
+| **`vault`** | `8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno` | Main ChildVault contract |
+| **`mock_swap`** | `C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE` | Swap pool harness for devnet execution |
 
+*(Optional)* If you ever need to redeploy:
 ```bash
 anchor build
 anchor deploy --provider.cluster devnet
 ```
 
-### Step 3 — Initialise Config PDA on devnet
+### Step 3 — Initialise Config & Devnet PreStocks
 
-`init-cluster.ts` detects `devnet` in the RPC URL and automatically switches to the Devnet USDC mint (`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`):
+1. **Initialize Global Config PDA:**
+   ```bash
+   pnpm init-cluster
+   ```
+   Auto-detects Devnet and binds Circle Devnet USDC.
 
-```bash
-SOLANA_RPC_URL=https://api.devnet.solana.com pnpm init-cluster
-```
+2. **Initialize Devnet PreStocks & Fund the Mock Swap Pool:**
+   ```bash
+   pnpm setup:devnet-prestocks
+   ```
+   This script creates/verifies the 7 mock SPL PreStock tokens, mints test tokens to the Admin wallet, funds the Devnet `mock_swap` pool PDA with 50,000 units of each asset, and registers them in the vault's on-chain `allowed_mints`.
 
-### Step 4 — Airdrop SOL (devnet)
+### Step 4 — Fund your wallet with SOL & Devnet USDC
 
-Use the standard Solana CLI or faucet. `pnpm fund` **only works with Surfpool localnet** (it relies on `surfnet_setTokenAccount`):
+1. **Devnet SOL:**
+   ```bash
+   solana airdrop 2 <YOUR_WALLET_ADDRESS> --url devnet
+   ```
+2. **Devnet USDC:**
+   Get Circle USDC on Solana Devnet from the official [Circle Devnet Faucet](https://faucet.circle.com/) (select Solana Devnet).
 
-```bash
-solana airdrop 2 <YOUR_WALLET_ADDRESS> --url devnet
-```
+### Step 5 — Run an automated trade test or start the apps
 
-For devnet USDC, use the [Circle devnet faucet](https://faucet.circle.com/).
+- **Quick Automated Devnet Trade Test:**
+  ```bash
+  pnpm test:devnet-trade
+  ```
+  Deposits into a test vault, computes the simulated quote, executes `execute_buy` on Devnet via CPI to `mock_swap`, and verifies token balances.
 
-### Step 5 — Run the app
-
-```bash
-pnpm dev
-```
+- **Start Web App + Keeper Daemon:**
+  ```bash
+  pnpm dev
+  ```
+  - Web UI: [http://localhost:3000](http://localhost:3000)
+  - Keeper daemon: polls every 30 seconds, automatically checks cost-basis caps and valuation premiums, and executes trades on Devnet!
 
 ---
 
@@ -280,6 +301,7 @@ anchor test
 | `NEXT_PUBLIC_SOLANA_NETWORK` | Web app | `mainnet-beta` (for Surfpool) or `devnet` |
 | `NEXT_PUBLIC_RPC_URL` | Web app | Solana RPC — `http://127.0.0.1:8899` (Surfpool) or `https://api.devnet.solana.com` |
 | `NEXT_PUBLIC_VAULT_PROGRAM_ID` | Web app | Always `8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno` |
+| `NEXT_PUBLIC_USDC_MINT` | Web app | `EPjFWdd5...` (Mainnet) or `4zMMC9...` (Devnet) |
 | `SOLANA_RPC_URL` | Keeper + scripts | Same RPC but for server-side keeper and init scripts |
 | `KEEPER_KEYPAIR_PATH` | Keeper | Path to keeper authority keypair (default: `~/.config/solana/id.json`) |
 | `KEEPER_PRIVATE_KEY` | Keeper | Raw JSON keypair bytes (alternative to keypair file, useful for CI/Docker) |
@@ -293,12 +315,13 @@ anchor test
 | # | Invariant | Enforcement |
 | :--- | :--- | :--- |
 | 1 | **Cost-basis Moon Cap** | On-chain Anchor constraint: `moon_cost_basis + amount_in ≤ total_deposited × moon_cap_bps / 10000`. Default 20%, hard max 50% on-chain. |
-| 2 | **10% Premium Ceiling** | Keeper computes `(jupiterExecutionPrice - markPrice) / markPrice × 100`. Rejects trade if > 10%. |
+| 2 | **10% Premium Ceiling** | Keeper computes `(executionPrice - markPrice) / markPrice × 100`. Rejects trade if > 10%. |
 | 3 | **Slippage Guard** | On-chain: verifies `min_out ≥ quoted_out × (10000 - max_slippage_bps) / 10000`. |
 | 4 | **Keeper-Only Execution** | `execute_buy` requires signer matches `config.keeper`. Non-keeper callers receive `NotKeeper` error. |
 | 5 | **Guardian Withdrawals Always Open** | Pausing (`set_paused`) blocks keeper buys but never blocks guardian withdrawals. |
-| 6 | **Allowed Mints Whitelist** | `create_vault` basket entries must all be in `config.allowed_mints`. Rejects `MintNotAllowed`. |
-| 7 | **Wallet-Scoped Local State** | Browser storage keyed to `moonjar_vault_state_<guardianWallet>`. Old global key is purged on load. |
+| 6 | **Allowed Mints Whitelist** | `create_vault` and `set_basket` entries must all be in `config.allowed_mints`. Rejects `MintNotAllowed`. |
+| 7 | **Cluster-Aware PreStock Mints** | Dynamic derivation of devnet vs mainnet mint addresses preventing uninitialized mint lookups. |
+| 8 | **Wallet-Scoped Local State** | Browser storage keyed to `moonjar_vault_state_<guardianWallet>`. Old global key is purged on load. |
 
 ---
 
@@ -307,6 +330,9 @@ anchor test
 ```bash
 # Anchor on-chain integration tests (uses mock_swap, runs on test-validator):
 anchor test
+
+# Automated on-chain trade test on Solana Devnet:
+pnpm test:devnet-trade
 
 # Shared package unit tests (Zod schemas, linters, Flesch-Kincaid):
 pnpm --filter @moonjar/shared test

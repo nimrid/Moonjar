@@ -81,13 +81,16 @@ Stage 5: Versioned V0 swap execution
 
 ## On Devnet
 
-PreStock Token-2022 mints and their AMM pools (Meteora DLMM, Raydium) **only exist on Mainnet**. On devnet, Jupiter will return no swap routes, and Stage 4 will skip with `No swap route available for <symbol>`. All other stages and invariant checks still run correctly.
+The keeper daemon features native **Devnet automated swap execution**:
 
-If you want to test keeper execution on devnet, you'd need to create test liquidity pools for the specific mint pairs — which is not part of the current setup.
+1. **Automatic Detection:** The keeper inspects `SOLANA_RPC_URL` (`const isDevnet = RPC_URL.includes('devnet')`).
+2. **Devnet PreStock Registry:** Candidate mints are resolved via `findPreStockToken()`, which supports both Devnet SPL mints (`9Qz3Lg...`, `7WaJ2s...`) and Mainnet mints.
+3. **Simulated Quote & `mock_swap` CPI:** Because Jupiter DEX liquidity pools for private equity tokens only exist on Mainnet, on Devnet the keeper simulates execution pricing and builds CPI instructions targeting the deployed on-chain **`mock_swap`** program (`C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE`) and `mock_swap_pool` PDA.
+4. **Real On-Chain Execution:** The keeper signs and submits a real on-chain transaction calling `execute_buy` on the vault program, transferring Circle Devnet USDC from the vault's Save Jar into the mock swap pool and depositing PreStock tokens into the vault's Moon Jar ATA.
 
 ## On Surfpool (localnet)
 
-Since Surfpool forks mainnet on demand, all Jupiter routes, PreStock mints, and AMM pools are available. This is the recommended environment for full end-to-end keeper testing.
+Since Surfpool forks mainnet on demand at `127.0.0.1:8899`, all Jupiter routes, mainnet PreStock mints, and AMM pools are available locally without real money. The keeper calls live Jupiter Aggregator V6 quote and swap-instruction APIs.
 
 ---
 

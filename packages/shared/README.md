@@ -27,23 +27,41 @@ The `@moonjar/shared` workspace package ensures single-source-of-truth data cont
 
 | Module | File | Purpose |
 | :--- | :--- | :--- |
-| **`types.ts`** | [`src/types.ts`](file:///Users/hng/Documents/antigravity/MoonJar/packages/shared/src/types.ts) | Core interfaces and Zod validation schemas (`ChildVaultMetadata`, `BuyDecisionLog`, `KidRequest`, `VaultAllocations`, etc.) |
-| **`prestocks.ts`** | [`src/prestocks.ts`](file:///Users/hng/Documents/antigravity/MoonJar/packages/shared/src/prestocks.ts) | Canonical PreStocks registry (`PRESTOCKS_LIST`), default basket presets (`BASKET_PRESETS`), and premium percentage calculators |
+| **`types.ts`** | [`src/types.ts`](file:///Users/hng/Documents/antigravity/MoonJar/packages/shared/src/types.ts) | Core interfaces and Zod validation schemas (`PreStockTokenSchema`, `ChildVaultMetadata`, `BuyDecisionLog`, `KidRequest`, `VaultAllocations`, etc.) |
+| **`prestocks.ts`** | [`src/prestocks.ts`](file:///Users/hng/Documents/antigravity/MoonJar/packages/shared/src/prestocks.ts) | Canonical PreStocks registry (`PRESTOCKS_LIST`), dynamic cluster presets (`getBasketPresets`), dual-mint resolution (`getPreStockMint`, `findPreStockToken`), and premium calculators |
+| **`devnet-prestocks.json`** | [`src/devnet-prestocks.json`](file:///Users/hng/Documents/antigravity/MoonJar/packages/shared/src/devnet-prestocks.json) | Generated SPL token mint addresses for the 7 mock PreStock tokens deployed to Solana Devnet |
 | **`flesch-kincaid.ts`** | [`src/flesch-kincaid.ts`](file:///Users/hng/Documents/antigravity/MoonJar/packages/shared/src/flesch-kincaid.ts) | Flesch-Kincaid grade level and reading ease scoring utilities |
 | **`banned-words.ts`** | [`src/banned-words.ts`](file:///Users/hng/Documents/antigravity/MoonJar/packages/shared/src/banned-words.ts) | Linter preventing adult financial jargon, gambling terminology, or high-pressure language in kid copy |
 | **`copy/`** | [`src/copy/`](file:///Users/hng/Documents/antigravity/MoonJar/packages/shared/src/copy) | Curated company educational stories for *Little Explorer* (Grades 1-4) and *Future Founder* (Grades 5-10) |
 
 ---
 
-## 🪙 PreStocks Asset Registry
+## 🪙 PreStocks Asset Registry & Cluster-Aware Mints
 
-The package exports `PRESTOCKS_LIST`, defining each private company token:
+The package provides single-source-of-truth metadata for supported private equities and handles dual-network mint resolution:
 
 ```typescript
-import { PRESTOCKS_LIST, BASKET_PRESETS, calculatePremiumPct } from '@moonjar/shared';
+import {
+  PRESTOCKS_LIST,
+  getBasketPresets,
+  getPreStockMint,
+  findPreStockToken,
+  calculatePremiumPct,
+  getPriceCheck
+} from '@moonjar/shared';
 
-// Calculate secondary market premium over mark valuation
+// 1. Get cluster-aware presets (Devnet SPL mints vs Mainnet Token-2022 mints)
+const presets = getBasketPresets(isDevnet);
+
+// 2. Resolve specific token mint for active cluster
+const spacexMint = getPreStockMint('SPACEX', isDevnet);
+
+// 3. Resolve metadata from any mint (devnet or mainnet) or symbol
+const tokenMeta = findPreStockToken(candidateMintAddress, liveTokens);
+
+// 4. Calculate secondary market premium over mark valuation
 const premiumPct = calculatePremiumPct(effectiveExecutionPrice, markValuationPrice);
+const priceCheck = getPriceCheck(premiumPct);
 ```
 
 ---

@@ -5,9 +5,10 @@ import {
   ChildVaultMetadata,
   BuyDecisionLog,
   KidRequest,
-  BASKET_PRESETS,
+  getBasketPresets,
 } from '@moonjar/shared';
 import { findVaultPda } from './vault-client/pda';
+import { RPC_URL } from './onchain';
 
 export interface OnChainRoundupTx {
   id: string;
@@ -89,7 +90,7 @@ export function createDefaultVaultState(guardianWallet: string, vaultAddress?: s
     isPaused: false,
     isGraduated: false,
     matchBalanceUsdc: 0.00,
-    allocations: BASKET_PRESETS[0].entries.map((e) => ({
+    allocations: getBasketPresets(RPC_URL.includes('devnet'))[0].entries.map((e) => ({
       symbol: e.symbol,
       mint: e.mint,
       weightBps: e.weightBps,

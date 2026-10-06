@@ -11,6 +11,10 @@ test-ledger/
 .DS_Store
 .pnpm-store/
 .env
+.env.devnet
 .env.local
 .env*.local
 *.tsbuildinfo
+
+# Devnet mint-authority keypairs — never commit these
+scripts/devnet-keys/

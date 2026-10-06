@@ -28,7 +28,9 @@ The deployment runbook deploys **both** programs to the local fork:
 | `vault` | `8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno` |
 | `mock_swap` | `C8cAUowrquZVNxH8PpToSkzzr74fC7uorZ4VPzFgNLAE` |
 
-`mock_swap` is deployed as part of the runbook but is **only ever called** from `tests/vault.ts`. The keeper and web app exclusively use Jupiter.
+On the Surfpool localnet fork, the keeper daemon talks directly to Jupiter V6. On Solana Devnet (where private equity AMM pools are unavailable), the keeper routes swaps through `mock_swap`. Both programs share identical program IDs across localnet and devnet.
+
+> **Environment Switch:** Use `pnpm env:localnet` to configure all workspace apps for Surfpool, or `pnpm env:devnet` to switch to Solana Devnet.
 
 ---
 
