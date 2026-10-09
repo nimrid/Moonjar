@@ -12,15 +12,16 @@
 ## 📖 Table of Contents
 
 1. [What Is Moonjar?](#-what-is-moonjar)
-2. [Three Ways to Run It](#-three-ways-to-run-it)
-3. [Monorepo Structure](#-monorepo-structure)
-4. [Prerequisites](#-prerequisites)
-5. [Option A — Local Development with Surfpool (Recommended)](#-option-a--local-development-with-surfpool-recommended)
-6. [Option B — Devnet](#-option-b--devnet)
-7. [Option C — Offline Unit Tests (anchor test)](#-option-c--offline-unit-tests-anchor-test)
-8. [Environment Variables Reference](#-environment-variables-reference)
-9. [Core Safety Invariants](#-core-safety-invariants)
-10. [Testing](#-testing)
+2. [System Architecture](#-system-architecture)
+3. [Three Ways to Run It](#-three-ways-to-run-it)
+4. [Monorepo Structure](#-monorepo-structure)
+5. [Prerequisites](#-prerequisites)
+6. [Option A — Local Development with Surfpool (Recommended)](#-option-a--local-development-with-surfpool-recommended)
+7. [Option B — Devnet](#-option-b--devnet)
+8. [Option C — Offline Unit Tests (anchor test)](#-option-c--offline-unit-tests-anchor-test)
+9. [Environment Variables Reference](#-environment-variables-reference)
+10. [Core Safety Invariants](#-core-safety-invariants)
+11. [Testing](#-testing)
 
 ---
 
@@ -34,6 +35,136 @@ Moonjar teaches children patient, long-term wealth-building by splitting savings
 A parent (Guardian) manages the vault via a Privy embedded Solana wallet. The child accesses their view via a private URL (`/k/<token>`) — no seed phrases, no keys, no signing.
 
 An autonomous **Keeper bot** continuously evaluates live Jupiter DEX quotes against PreStocks fundamental mark prices and executes DCA micro-purchases (max \$5 per cycle) only when the secondary market premium is ≤ 10%.
+
+---
+
+## 🏛️ System Architecture
+
+Moonjar combines consumer-grade web apps, an autonomous fiduciary off-chain daemon, live decentralized exchange routing, and on-chain Anchor smart contracts on Solana:
+
+### 1. Component & Network Architecture
+
+```mermaid
+flowchart TB
+    subgraph Clients["📱 Client Interfaces (Next.js 14)"]
+        Guardian["👨‍👧 Guardian Suite<br/>(apps/web/guardian)"]
+        Child["🧒 Child Portal<br/>(apps/web/k/:token)"]
+        Privy["🔑 Privy Embedded Wallet<br/>(Solana Key Management)"]
+        Guardian -.->|Signs & Authenticates| Privy
+    end
+
+    subgraph OffChain["🤖 Fiduciary Keeper Daemon (apps/keeper)"]
+        KeeperLoop["Keeper Daemon Loop<br/>(30s Periodic Evaluation)"]
+        PreStocksClient["PreStocks Valuation Sync<br/>(Fundamental Mark Price)"]
+        JupClient["Jupiter DEX Quote Engine<br/>(Direct Route Discovery)"]
+        SafetyEngine["🛡️ Fiduciary Safety Guard<br/>• Cost-Basis Moon Cap (&le; 20-50%)<br/>• Premium Guard (&le; 10% Ceiling)<br/>• Slippage Guard (&le; 2%)<br/>• DCA Micro-Tranche ($1 - $5)"]
+        TxBuilder["Transaction Builder<br/>(VersionedTx + Priority Fees)"]
+
+        KeeperLoop --> PreStocksClient
+        KeeperLoop --> JupClient
+        PreStocksClient --> SafetyEngine
+        JupClient --> SafetyEngine
+        SafetyEngine -->|Approved DCA Order| TxBuilder
+    end
+
+    subgraph External["🌐 External Infrastructure & Feeds"]
+        PreStocksAPI["PreStocks API<br/>(prestocks.com/api/prestocks)"]
+        JupiterAPI["Jupiter V6 Swap API<br/>(api.jup.ag)"]
+    end
+
+    subgraph Solana["⚡ Solana Blockchain (Anchor 0.30)"]
+        subgraph VaultProgram["🍯 Moonjar Vault Program (8Xi2Ty3i2VMsi4JauYrHoyyBcKoaBdMcLHEtZb6bHMno)"]
+            ConfigPDA["Config PDA [config]<br/>• Admin & Keeper Authority<br/>• Allowed Mints Whitelist<br/>• Slippage & Matching Rules"]
+            MatchPoolPDA["Match Pool PDA [match_pool]<br/>• Sponsor USDC Reserve<br/>• Protocol Match Funding"]
+            ChildVaultPDA["ChildVault PDA [vault, guardian, index]<br/>• Guardian & Child Authority<br/>• Nickname Hash (Zero PII)<br/>• Total Deposited & Moon Cost Basis<br/>• Target Basket Weights (BPS)"]
+
+            subgraph VaultAccounts["Vault Token Accounts (PDA Owned)"]
+                SaveJar["Save Jar ATA (USDC)<br/>(SPL Token Program)"]
+                MoonJar["Moon Jar ATAs (PreStocks)<br/>(Token-2022 / SPL Token)"]
+            end
+        end
+
+        subgraph SwapRoute["💱 Execution Layer (CPI)"]
+            JupiterProg["Jupiter Aggregator V6<br/>(Mainnet / Surfpool)"]
+            MockSwapProg["Mock Swap Program (C8cAUo...)<br/>(Devnet / Anchor Tests)"]
+            DEXPools["DEX Pools<br/>(Meteora DLMM, Raydium, Manifest, Whirlpool)"]
+        end
+    end
+
+    %% Client Interactions
+    Guardian -->|"1. create_vault / deposit / withdraw"| ChildVaultPDA
+    Privy -->|"Transfers USDC"| SaveJar
+    Child -->|"Read-only Portfolio View (Capability Token)"| ChildVaultPDA
+
+    %% Keeper Interactions
+    PreStocksClient <-->|"Sync Mark Prices"| PreStocksAPI
+    JupClient <-->|"Fetch Best Route & Price"| JupiterAPI
+    TxBuilder -->|"2. execute_buy (Keeper Signer)"| ChildVaultPDA
+
+    %% On-Chain Execution Flow
+    ChildVaultPDA -->|"3. Invariants & Cap Verification"| ConfigPDA
+    ChildVaultPDA -->|"4. invoke_signed (Vault PDA Signer)"| SwapRoute
+    JupiterProg --> DEXPools
+    DEXPools -->|"USDC in &rarr; PreStock out"| MoonJar
+    MockSwapProg -->|"Mock USDC in &rarr; Mock PreStock out"| MoonJar
+    SaveJar -->|"Supplies USDC amount_in"| SwapRoute
+    MatchPoolPDA -.->|"apply_match (Matching Incentive)"| SaveJar
+```
+
+### 2. Autonomous Trade Lifecycle & Data Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Guardian as Guardian (Parent)
+    participant Web as Guardian Web App
+    participant Keeper as Autonomous Keeper
+    participant PreStocks as PreStocks API
+    participant Jup as Jupiter DEX / Devnet
+    participant Vault as Vault Program (On-Chain)
+    participant Swap as Jupiter / Mock Swap CPI
+
+    Note over Guardian,Vault: 1. Vault Setup & Funding
+    Guardian->>Web: Connect with Privy embedded wallet
+    Guardian->>Vault: create_vault(child_index, basket, moon_cap_bps)
+    Guardian->>Vault: deposit(amount_usdc) &rarr; Transferred to Save Jar ATA
+
+    Note over Keeper,Swap: 2. Autonomous DCA Evaluation Cycle (Every 30s)
+    Keeper->>Vault: Query on-chain ChildVault & Save Jar token balance
+    Vault-->>Keeper: Return total_deposited, moon_cost_basis, basket
+    Keeper->>PreStocks: Ingest fundamental mark prices (markPrice)
+    Keeper->>Jup: Request swap quote ($1 - $5 USDC &rarr; target PreStock)
+    Jup-->>Keeper: Return quoted_out & executionPrice
+
+    Note over Keeper: 3. Fiduciary Safety Engine Checks
+    Keeper->>Keeper: Check Moon Cap: (moon_cost_basis + in) &le; max_allowed_moon
+    Keeper->>Keeper: Compute Premium: (execPrice - markPrice) / markPrice &times; 100
+    alt Premium > 10% (Secondary Market Overpriced)
+        Keeper-->>Keeper: SKIP / DEFER: Funds remain safe in Save Jar
+    else Premium &le; 10% (Fair Value or Discounted)
+        Keeper->>Vault: execute_buy(mint_out, amount_in, quoted_out, min_out, cpi_data)
+        Note over Vault: 4. On-Chain Invariant Enforcement
+        Vault->>Vault: Require caller == config.keeper
+        Vault->>Vault: Require mint_out in allowed_mints & vault.basket
+        Vault->>Vault: Require Save Jar balance &ge; amount_in
+        Vault->>Vault: Require (moon_cost_basis + amount_in) &le; cap
+        Vault->>Vault: Require min_out &ge; quoted_out &times; (1 - max_slippage)
+        Vault->>Vault: Snapshot pre-CPI token balances
+        Vault->>Swap: invoke_signed(cpi_data) as Vault PDA
+        Swap-->>Vault: Complete token exchange
+        Vault->>Vault: Reload & verify post-balance deltas (usdc_spent & tokens_received)
+        Vault->>Vault: Update moon_cost_basis += usdc_spent
+        Vault-->>Keeper: Emit Bought event
+    end
+
+    Note over Guardian,Vault: 5. Emergency Withdrawal & Graduation
+    opt Guardian Emergency Exit
+        Guardian->>Vault: withdraw(amount) (Always unblocked, even if paused)
+    end
+    opt Child Graduation (unlock_ts reached)
+        Guardian->>Vault: graduate() &rarr; Custody transfers to Child authority
+    end
+```
 
 ---
 
